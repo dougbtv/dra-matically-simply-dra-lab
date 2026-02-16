@@ -1,0 +1,19 @@
+---
+# Default variables for k8shazgpu role
+
+# Golang installation
+golang_version: "1.23.0"
+golang_download_url: "https://go.dev/dl/go{{ golang_version }}.linux-amd64.tar.gz"
+golang_install_dir: "/usr/local"
+
+# k8shazgpu repository
+k8shazgpu_repo_url: "https://github.com/dougbtv/canhazgpu.git"
+k8shazgpu_repo_branch: "k8shazgpu-demo-worthy"
+k8shazgpu_clone_dir: "/tmp/canhazgpu"
+
+# k8shazgpu binary
+k8shazgpu_binary_install_path: "/usr/local/bin/k8shazgpu"
+
+# Deployment
+k8shazgpu_deploy: true
+k8shazgpu_validate: true

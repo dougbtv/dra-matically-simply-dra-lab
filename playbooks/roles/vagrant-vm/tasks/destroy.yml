@@ -1,0 +1,22 @@
+- name: Destroy VM using Vagrant
+  ansible.builtin.shell: stdbuf -oL -eL vagrant destroy -f
+  args:
+    chdir: "{{ remote_vagrant_dir }}"
+
+- name: Remove remote Vagrant VM directory
+  file:
+    path: "{{ remote_vagrant_dir }}"
+    state: absent
+
+# - name: Remove inventory file locally
+#   hosts: localhost
+#   gather_facts: false
+#   tasks:
+#     - name: Remove inventory file for VM
+#       file:
+#         path: "{{ playbook_dir }}/../inventory/{{ vm_name }}.yml"
+#         state: absent
+
+#     - name: Show result
+#       debug:
+#         msg: "Teardown complete. Inventory file ../inventory/{{ vm_name }}.yml removed."

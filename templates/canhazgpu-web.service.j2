@@ -1,0 +1,14 @@
+[Unit]
+Description=canhazgpu Web Dashboard
+After=network.target redis.service
+
+[Service]
+Type=simple
+User=root
+ExecStart=/usr/local/bin/canhazgpu web --port {{ canhazgpu_port | default(4787) }}
+Restart=always
+RestartSec=5
+Environment="PATH=/usr/local/bin:/usr/bin:/bin"
+
+[Install]
+WantedBy=multi-user.target

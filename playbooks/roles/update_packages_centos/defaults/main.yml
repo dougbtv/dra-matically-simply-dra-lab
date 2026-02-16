@@ -1,0 +1,11 @@
+---
+# Package update configuration for CentOS systems
+
+# Reboot configuration
+reboot_timeout: 600
+reboot_delay: 10
+package_update_centos_force_reboot: false
+
+# Update behavior
+update_all_packages: true
+update_cache: true

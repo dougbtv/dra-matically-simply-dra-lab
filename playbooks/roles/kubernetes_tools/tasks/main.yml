@@ -1,0 +1,14 @@
+- name: Run the helm install
+  include_tasks: "helm.yml"
+
+- name: Install chart testing kubernetes_tools
+  include_tasks: "chart-testing.yml"
+
+- name: Install kubectl
+  include_tasks: "kubectl.yml"
+
+- name: Install kustomize
+  include_tasks: "kustomize.yml"
+
+- name: Install helmfile
+  include_tasks: "helmfile.yml"

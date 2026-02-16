@@ -1,0 +1,37 @@
+---
+- name: copy RPM file
+  copy:
+    src: "{{ crio_rpm_file }}"
+    dest: /root/{{ crio_rpm_file | basename }}
+    owner: root
+    group: root
+    mode: 0644
+
+- name: crio install
+  shell: |
+    dnf -y copr enable rhcontainerbot/container-selinux;
+    curl -L -o /etc/yum.repos.d/devel:kubic:libcontainers:stable.repo https://download.opensuse.org/repositories/devel:kubic:libcontainers:stable/Fedora_37/devel:kubic:libcontainers:stable.repo;
+    dnf install -y /root/{{ crio_rpm_file | basename }}
+
+- name: delete cni directory once
+  file:
+    path: /etc/cni/net.d
+    state: absent
+    owner: root
+    group: root
+    mode: 0755
+
+- name: create work directory
+  file:
+    path: /etc/cni/net.d
+    state: directory
+    owner: root
+    group: root
+    mode: 0755
+
+- name: enable systemd
+  systemd:
+    name: crio
+    enabled: yes
+    daemon_reload: yes
+    state: started

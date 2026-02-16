@@ -1,0 +1,213 @@
+---
+# Playbook to deploy demo assets (fake GPU operator with DRA)
+#
+# Prerequisites:
+#   - Kubernetes cluster running (via 02-setup-k8s-cluster.yml)
+#   - Helm installed on control plane
+#   - canhazgpu service running on all nodes
+#
+# Usage:
+#   ansible-playbook -i inventory/k8s-cluster.yml playbooks/03-deploy-demo-assets.yml
+#
+# This playbook will:
+#   - Deploy fake-gpu-operator Helm chart
+#   - Configure simulated H100 GPUs
+#   - Setup DRA ResourceSlices and DeviceClasses
+#   - Optionally deploy test pod with DRA claim
+#
+
+- name: Deploy demo assets (fake GPU operator with DRA)
+  hosts: k8s_control_plane
+  become: false
+
+  vars:
+    kubeconfig: "/home/{{ ansible_user }}/.kube/admin.conf"
+    gpu_operator_namespace: gpu-operator
+    gpu_operator_chart_version: latest
+    deploy_test_pod: false  # Set to true to deploy test pod
+
+  environment:
+    KUBECONFIG: "{{ kubeconfig }}"
+
+  tasks:
+    - name: Create gpu-operator namespace
+      shell: kubectl create namespace {{ gpu_operator_namespace }}
+      register: ns_create
+      failed_when: false
+      changed_when: "'created' in ns_create.stdout"
+
+    - name: Label gpu-operator namespace for pod security
+      shell: kubectl label ns {{ gpu_operator_namespace }} pod-security.kubernetes.io/enforce=privileged --overwrite
+
+    - name: Ensure simulated GPU node-pool labels exist
+      shell: >-
+        kubectl label node {{ item }} run.ai/simulated-gpu-node-pool=default --overwrite
+      loop: "{{ groups['k8s_cluster'] }}"
+
+    - name: Force topology reconciliation by toggling node-pool label
+      shell: >-
+        kubectl label node {{ item }} run.ai/simulated-gpu-node-pool- || true
+      loop: "{{ groups['k8s_cluster'] }}"
+
+    - name: Wait briefly for label removal to propagate
+      pause:
+        seconds: 3
+
+    - name: Re-apply simulated GPU node-pool label
+      shell: >-
+        kubectl label node {{ item }} run.ai/simulated-gpu-node-pool=default --overwrite
+      loop: "{{ groups['k8s_cluster'] }}"
+
+    - name: Check if Helm is installed
+      command: helm version
+      register: helm_check
+      ignore_errors: true
+      environment:
+        PATH: "/usr/local/bin:/usr/bin:/bin"
+
+    - name: Fail if Helm is not installed
+      fail:
+        msg: "Helm 3.x is required but not found. Please install Helm first."
+      when: helm_check.rc != 0
+
+    - name: Check Helm OCI support
+      shell: helm env | grep -q HELM_EXPERIMENTAL_OCI
+      register: helm_oci_env
+      failed_when: false
+      changed_when: false
+
+    - name: Copy DRA H100 values file
+      copy:
+        src: "{{ playbook_dir }}/files/dra-h100-values.yaml"
+        dest: "/tmp/dra-h100-values.yaml"
+        mode: '0644'
+
+    - name: Install fake-gpu-operator with Helm
+      shell: >-
+        helm upgrade -i gpu-operator
+        oci://ghcr.io/run-ai/fake-gpu-operator/fake-gpu-operator
+        --namespace {{ gpu_operator_namespace }}
+        --create-namespace
+        --reset-values
+        -f /tmp/dra-h100-values.yaml
+        {{ '--version ' + gpu_operator_chart_version if gpu_operator_chart_version != 'latest' else '' }}
+      register: helm_install_result
+      environment:
+        PATH: "/usr/local/bin:/usr/bin:/bin"
+
+    - name: Display Helm install result
+      debug:
+        msg: "{{ helm_install_result }}"
+
+    - name: Wait for gpu-operator pods to be ready
+      shell: kubectl wait --for=condition=Ready pod -n {{ gpu_operator_namespace }} --all --timeout=300s
+      register: pods_ready
+      ignore_errors: true
+
+    - name: Display pod readiness result
+      debug:
+        msg: "{{ pods_ready.stdout_lines }}"
+
+    - name: Check DRA pods are running
+      shell: kubectl get daemonset -n {{ gpu_operator_namespace }} | grep dra
+      register: dra_daemonsets
+      ignore_errors: true
+
+    - name: Display DRA daemonsets
+      debug:
+        msg: "{{ dra_daemonsets.stdout_lines }}"
+
+    - name: Check ResourceSlices were created
+      shell: kubectl get resourceslices
+      register: resource_slices
+      ignore_errors: true
+
+    - name: Display ResourceSlices
+      debug:
+        msg: "{{ resource_slices.stdout_lines }}"
+
+    - name: Validate node labels
+      shell: kubectl get nodes --show-labels | grep run.ai/simulated-gpu-node-pool=default
+      register: node_labels
+
+    - name: Show node label validation
+      debug:
+        msg: "{{ node_labels.stdout_lines }}"
+
+    - name: Validate topology ConfigMap
+      shell: kubectl get configmap topology -n {{ gpu_operator_namespace }} -o yaml | grep -E "gpuProduct:|gpuCount:|gpuMemory:"
+      register: topology_cfg
+
+    - name: Show topology ConfigMap values
+      debug:
+        msg: "{{ topology_cfg.stdout_lines }}"
+
+    - name: Validate DRA plugin pods
+      shell: kubectl get pods -n {{ gpu_operator_namespace }} -l app=fake-gpu-operator-kubeletplugin
+      register: dra_pods
+
+    - name: Show DRA plugin pods
+      debug:
+        msg: "{{ dra_pods.stdout_lines }}"
+
+    - name: Validate ResourceSlices model and count
+      shell: >-
+        kubectl get resourceslice -o json | jq -r '.items[] | "\(.metadata.name): \(.spec.devices | length) devices, model: \(.spec.devices[0].attributes.model.string)"'
+      register: resource_slices_detail
+      ignore_errors: true
+
+    - name: Show ResourceSlice details
+      debug:
+        msg: "{{ resource_slices_detail.stdout_lines }}"
+
+    - name: Deploy test pod if enabled
+      block:
+        - name: Copy test pod file
+          copy:
+            src: "{{ playbook_dir }}/files/dra-h100-test-pod.yaml"
+            dest: "/tmp/dra-h100-test-pod.yaml"
+            mode: '0644'
+
+        - name: Apply test pod
+          shell: kubectl apply -f /tmp/dra-h100-test-pod.yaml
+
+        - name: Wait for test pod to be ready
+          shell: kubectl wait --for=condition=Ready pod/h100-test-pod --timeout=120s
+          register: test_pod_ready
+
+        - name: Check ResourceClaim allocation
+          shell: kubectl get resourceclaims
+          register: resource_claims
+
+        - name: Display ResourceClaims
+          debug:
+            msg: "{{ resource_claims.stdout_lines }}"
+      when: deploy_test_pod | bool
+
+    - name: Display final cluster status
+      debug:
+        msg: |
+          ============================================
+          Demo Assets Deployment Complete!
+          ============================================
+
+          GPU Operator installed in namespace: {{ gpu_operator_namespace }}
+
+          Verify installation:
+          - kubectl get pods -n {{ gpu_operator_namespace }}
+          - kubectl get daemonset -n {{ gpu_operator_namespace }}
+          - kubectl get resourceslices
+          - kubectl get deviceclasses
+
+          Check pod scheduling:
+          - kubectl describe pod h100-test-pod (if test pod deployed)
+          - kubectl get resourceclaims
+
+          View metrics:
+          - kubectl port-forward -n {{ gpu_operator_namespace }} svc/fake-gpu-operator-topology-server 8080:8080
+          - curl http://localhost:8080/metrics
+
+          Cleanup:
+          - helm uninstall gpu-operator -n {{ gpu_operator_namespace }}
+
+          Next step: Run playbooks/04-install-k8shazgpu.yml

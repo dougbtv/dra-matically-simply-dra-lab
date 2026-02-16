@@ -1,0 +1,10 @@
+helm_version: "v3.18.4"
+helm_platform: "linux-amd64"
+helm_download_url: "https://get.helm.sh/helm-{{ helm_version }}-{{ helm_platform }}.tar.gz"
+helm_asc_url: "https://get.helm.sh/helm-{{ helm_version }}-{{ helm_platform }}.tar.gz.asc"
+helm_bin_path: "/usr/local/bin/helm"
+arch_map:
+  x86_64: amd64
+  aarch64: arm64
+  arm64: arm64
+helmfile_version: 1.1.3

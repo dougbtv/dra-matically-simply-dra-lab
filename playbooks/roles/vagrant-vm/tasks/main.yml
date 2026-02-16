@@ -1,0 +1,13 @@
+---
+# Default task file for vagrant-vm role
+# This role supports different task files via tasks_from parameter:
+# - create.yml: Create a new Vagrant VM
+# - destroy.yml: Destroy an existing Vagrant VM
+
+- name: Display vagrant-vm role information
+  debug:
+    msg: |
+      This is the vagrant-vm role.
+      Use tasks_from parameter to specify which tasks to run:
+      - create: Create a new Vagrant VM
+      - destroy: Destroy an existing Vagrant VM

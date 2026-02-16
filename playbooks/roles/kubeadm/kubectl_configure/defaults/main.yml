@@ -1,0 +1,3 @@
+---
+# Default vars for kubectl_configure role
+vm_image_user: "{{ ansible_user | default('fedora') }}"

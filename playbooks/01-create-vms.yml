@@ -1,0 +1,85 @@
+---
+# Playbook to create two CentOS 9 Stream VMs on your virthost
+#
+# Prerequisites:
+#   - Configure inventory/virthost.yml with your virthost details
+#
+# Usage:
+#   ansible-playbook -i inventory/virthost.yml playbooks/01-create-vms.yml
+#
+# This playbook will:
+#   - Install Vagrant, libvirt, and KVM on your virthost
+#   - Create 2 CentOS Stream 9 VMs with bridged networking
+#   - Generate inventory/k8s-cluster.yml for subsequent playbooks
+#
+
+- name: Create CentOS 9 Stream VMs on virthost
+  hosts: virthost
+  gather_facts: true
+  vars:
+    ssh_public_keys:
+      - "{{ lookup('file', lookup('env','HOME') + '/.ssh/id_rsa.pub') }}"
+    vms:
+      - name: centos9-vm1
+        image: "generic/centos9s"
+        ram: 4096
+        vcpus: 2
+        network_mode: "bridged"
+        bridge_device: "br0"
+        ansible_role: "centos9-vm1"
+      - name: centos9-vm2
+        image: "generic/centos9s"
+        ram: 4096
+        vcpus: 2
+        network_mode: "bridged"
+        bridge_device: "br0"
+        ansible_role: "centos9-vm2"
+
+  tasks:
+    - name: Install required packages
+      package:
+        name:
+          - vagrant
+          - vagrant-libvirt
+          - libvirt
+          - qemu-kvm
+        state: present
+
+    - name: Ensure libvirtd is running
+      service:
+        name: libvirtd
+        state: started
+        enabled: true
+
+    - name: Create Vagrant VMs
+      include_role:
+        name: vagrant-vm
+        tasks_from: create
+        apply:
+          vars:
+            vm_name: "{{ vm_item.name }}"
+            vm_image_nickname: "{{ vm_item.image }}"
+            vm_ram: "{{ vm_item.ram }}"
+            vm_vcpus: "{{ vm_item.vcpus }}"
+            vm_network_mode: "{{ vm_item.network_mode }}"
+            vm_bridge_device: "{{ vm_item.bridge_device }}"
+            vm_ansible_role: "{{ vm_item.ansible_role }}"
+      loop: "{{ vms }}"
+      loop_control:
+        loop_var: vm_item
+        label: "{{ vm_item.name }}"
+
+    - name: Display VM information
+      debug:
+        msg: |
+          VMs created successfully!
+
+          VM 1: centos9-vm1
+            - Inventory: inventory/centos9-vm1.yml
+
+          VM 2: centos9-vm2
+            - Inventory: inventory/centos9-vm2.yml
+
+          You can now SSH to these VMs using the generated inventory files.
+
+          Next step: Run playbooks/02-setup-k8s-cluster.yml

@@ -1,0 +1,41 @@
+---
+# install crio from k8s repo
+- name: copy cri-o.repo
+  template:
+    src: "cri-o.repo.j2"
+    dest: "/etc/yum.repos.d/cri-o.repo"
+    mode: 0644
+
+- name: install cri-o dependencies
+  dnf:
+    name: conntrack,container-selinux,ethtool,socat
+    state: present
+
+- name: install cri-o packages
+  dnf:
+    name: cri-o
+    disable_excludes: cri-o
+    state: present
+
+- name: delete cni directory once
+  file:
+    path: /etc/cni/net.d
+    state: absent
+    owner: root
+    group: root
+    mode: 0755
+
+- name: create work directory
+  file:
+    path: /etc/cni/net.d
+    state: directory
+    owner: root
+    group: root
+    mode: 0755
+
+- name: enable systemd
+  systemd:
+    name: crio
+    enabled: yes
+    daemon_reload: yes
+    state: started

@@ -1,0 +1,7 @@
+---
+# Default vars for kubectl_proxy_systemd role
+kubectl_proxy_port: 8088
+kubectl_home: "/home/{{ ansible_user | default('fedora') }}"
+kubectl_user: "{{ ansible_user | default('fedora') }}"
+kubectl_group: "{{ ansible_user | default('fedora') }}"
+vm_image_user: "{{ ansible_user | default('fedora') }}"

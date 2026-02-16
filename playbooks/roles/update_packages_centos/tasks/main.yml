@@ -1,0 +1,97 @@
+---
+# Package update role for CentOS systems
+
+- name: Check if running on CentOS/RHEL
+  fail:
+    msg: "This role is designed for CentOS/RHEL systems only"
+  when: ansible_os_family != "RedHat"
+
+- name: Display system information
+  debug:
+    msg: "Updating packages on {{ ansible_distribution }} {{ ansible_distribution_version }} (current kernel: {{ ansible_kernel }})"
+
+- name: Record current kernel version
+  set_fact:
+    current_kernel: "{{ ansible_kernel }}"
+
+- name: Check for available package updates
+  command: dnf check-update
+  register: dnf_check_result
+  failed_when: false
+  changed_when: false
+
+- name: Display update status
+  debug:
+    msg: "{{ 'Updates available' if dnf_check_result.rc == 100 else 'System is up to date' }}"
+
+- name: Update all packages
+  dnf:
+    name: "*"
+    state: latest
+    update_cache: "{{ update_cache }}"
+  register: dnf_update_result
+  when: 
+    - update_all_packages
+    - dnf_check_result.rc == 100
+
+- name: Display package update results
+  debug:
+    msg: "Package update completed. {{ dnf_update_result.results | length if dnf_update_result.results is defined else 0 }} packages updated."
+  when: dnf_update_result is defined
+
+- name: Check if kernel packages were updated
+  set_fact:
+    kernel_updated: "{{ dnf_update_result.results | default([]) | select('search', '^kernel') | list | length > 0 }}"
+  when: dnf_update_result is defined
+
+- name: Display kernel update status
+  debug:
+    msg: "{{ 'Kernel was updated - reboot required' if kernel_updated | default(false) else 'No kernel update - reboot not needed' }}"
+
+- name: Reboot system if kernel was updated or force reboot is enabled
+  reboot:
+    msg: "Rebooting to load new kernel after package updates"
+    pre_reboot_delay: "{{ reboot_delay }}"
+    reboot_timeout: "{{ reboot_timeout }}"
+  when: 
+    - (kernel_updated | default(false)) or (package_update_centos_force_reboot | default(false))
+    - dnf_update_result is defined
+
+- name: Wait for system to come back up
+  wait_for_connection:
+    delay: 5
+    timeout: "{{ reboot_timeout }}"
+  when: 
+    - (kernel_updated | default(false)) or (package_update_centos_force_reboot | default(false))
+    - dnf_update_result is defined
+
+- name: Verify new kernel version after reboot
+  setup:
+    filter: ansible_kernel
+  when: 
+    - (kernel_updated | default(false)) or (package_update_centos_force_reboot | default(false))
+    - dnf_update_result is defined
+
+- name: Display kernel version comparison
+  debug:
+    msg: |
+      Kernel update summary:
+      - Previous kernel: {{ current_kernel }}
+      - Current kernel: {{ ansible_kernel }}
+      - Kernel changed: {{ current_kernel != ansible_kernel }}
+  when: 
+    - (kernel_updated | default(false)) or (package_update_centos_force_reboot | default(false))
+    - dnf_update_result is defined
+
+- name: Package update summary
+  debug:
+    msg: |
+      Package Update Complete!
+      
+      Status:
+      - Packages updated: {{ 'Yes' if dnf_update_result.changed | default(false) else 'No updates available' }}
+      - Kernel updated: {{ 'Yes' if kernel_updated | default(false) else 'No' }}
+      - System rebooted: {{ 'Yes' if kernel_updated | default(false) else 'No' }}
+      - Current kernel: {{ ansible_kernel }}
+      
+      System is ready for subsequent role execution.

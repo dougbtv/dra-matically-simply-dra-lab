@@ -1,0 +1,56 @@
+- name: Check if kustomize is already installed
+  stat:
+    path: /usr/local/bin/kustomize
+  register: kustomize_stat
+
+- name: Get latest Kustomize release tag
+  uri:
+    url: https://api.github.com/repos/kubernetes-sigs/kustomize/releases/latest
+    return_content: yes
+  register: kustomize_api_response
+  when: kustomize_stat.stat.exists == false
+
+- name: Set Kustomize variables
+  set_fact:
+    kustomize_tag: "{{ kustomize_api_response.json.tag_name }}"
+    kustomize_version: "{{ kustomize_api_response.json.tag_name | regex_replace('^kustomize/', '') }}"
+    kustomize_archive: "kustomize_{{ kustomize_api_response.json.tag_name | regex_replace('^kustomize/', '') }}_{{ ansible_system | lower }}_{{ arch_map[ansible_architecture] }}.tar.gz"
+    kustomize_url: "https://github.com/kubernetes-sigs/kustomize/releases/download/{{ kustomize_api_response.json.tag_name }}/kustomize_{{ kustomize_api_response.json.tag_name | regex_replace('^kustomize/', '') }}_{{ ansible_system | lower }}_{{ arch_map[ansible_architecture] }}.tar.gz"
+    kustomize_bin_path: "/usr/local/bin/kustomize"
+  when: kustomize_stat.stat.exists == false
+
+- name: Download kustomize archive
+  get_url:
+    url: "{{ kustomize_url }}"
+    dest: "/tmp/{{ kustomize_archive }}"
+    mode: '0644'
+  when: kustomize_stat.stat.exists == false
+
+- name: Extract kustomize binary
+  unarchive:
+    src: "/tmp/{{ kustomize_archive }}"
+    dest: "/tmp/"
+    remote_src: yes
+    creates: "/tmp/kustomize"
+  when: kustomize_stat.stat.exists == false
+
+- name: Move kustomize binary to /usr/local/bin
+  copy:
+    src: "/tmp/kustomize"
+    dest: "{{ kustomize_bin_path }}"
+    remote_src: yes
+    mode: '0755'
+  when: kustomize_stat.stat.exists == false
+  become: true
+
+- name: Clean up kustomize archive
+  file:
+    path: "/tmp/{{ kustomize_archive }}"
+    state: absent
+  when: kustomize_stat.stat.exists == false
+
+- name: Clean up extracted kustomize binary
+  file:
+    path: "/tmp/kustomize"
+    state: absent
+  when: kustomize_stat.stat.exists == false

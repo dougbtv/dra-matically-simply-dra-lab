@@ -1,0 +1,54 @@
+# DRA H100 fake-gpu-operator values
+# 8x H100 GPUs per node configuration
+
+gpu:
+  count: 8
+  product: "NVIDIA H100"
+  memory: 80  # GB per GPU
+
+devicePlugin:
+  enabled: false
+
+# Topology configuration (used by status-updater / topology ConfigMap)
+topology:
+  nodePools:
+    default:
+      gpuCount: 8
+      gpuProduct: "NVIDIA-H100-SXM5-80GB"
+      gpuMemory: 81559
+
+draPlugin:
+  enabled: true
+  dumpSpec: true
+  
+  kubeletPlugin:
+    enabled: true
+    nodeSelector:
+      nvidia.com/gpu.deploy.dra-plugin-gpu: "true"
+
+# Pod specifications
+podAnnotations: {}
+
+# Node selector for GPU nodes
+nodeSelector: {}
+
+# Tolerations for GPU nodes
+tolerations: []
+
+# Resource limits
+resources:
+  limits:
+    cpu: 200m
+    memory: 200Mi
+  requests:
+    cpu: 100m
+    memory: 100Mi
+
+# Image configuration
+image:
+  registry: ghcr.io
+  repository: run-ai/fake-gpu-operator/dra-plugin-gpu
+  pullPolicy: IfNotPresent
+
+# Logging
+logLevel: info

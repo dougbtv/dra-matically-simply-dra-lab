@@ -1,0 +1,48 @@
+- name: Create temp directory for Helm install
+  tempfile:
+    state: directory
+    suffix: helm
+  register: helm_tmpdir
+
+- name: Download Helm tarball
+  get_url:
+    url: "{{ helm_download_url }}"
+    dest: "{{ helm_tmpdir.path }}/helm.tar.gz"
+    mode: '0644'
+
+# - name: (Optional) Download Helm GPG signature
+#   get_url:
+#     url: "{{ helm_asc_url }}"
+#     dest: "{{ helm_tmpdir.path }}/helm.tar.gz.asc"
+#     mode: '0644'
+
+# Uncomment to verify GPG (requires Helm key)
+# - name: Import Helm GPG key
+#   ansible.builtin.command: >
+#     gpg --keyserver hkps://keyserver.ubuntu.com --recv-keys 0xE3ADB959B13541D1
+#   args:
+#     creates: "~/.gnupg"
+
+# - name: Verify Helm download (GPG)
+#   ansible.builtin.command: >
+#     gpg --verify {{ helm_tmpdir.path }}/helm.tar.gz.asc {{ helm_tmpdir.path }}/helm.tar.gz
+#   register: gpg_result
+#   failed_when: gpg_result.rc != 0
+
+- name: Extract Helm binary
+  unarchive:
+    src: "{{ helm_tmpdir.path }}/helm.tar.gz"
+    dest: "{{ helm_tmpdir.path }}"
+    remote_src: yes
+
+- name: Move Helm binary to /usr/local/bin
+  copy:
+    src: "{{ helm_tmpdir.path }}/{{ helm_platform }}/helm"
+    dest: "{{ helm_bin_path }}"
+    mode: '0755'
+    remote_src: yes
+
+- name: Verify helm version
+  command: "{{ helm_bin_path }} version"
+  register: helm_version_result
+  changed_when: false

@@ -1,0 +1,52 @@
+- name: Set chart-testing version
+  set_fact:
+    ct_version: "3.12.0"
+    ct_bin_path: "/usr/local/bin/ct"
+
+- name: Set chart-testing archive name
+  set_fact:
+    ct_archive: "chart-testing_{{ ct_version }}_{{ ansible_system | lower }}_{{ arch_map[ansible_architecture] }}.tar.gz"
+
+- name: Set chart-testing download URL
+  set_fact:
+    ct_url: "https://github.com/helm/chart-testing/releases/download/v{{ ct_version }}/{{ ct_archive }}"
+
+- name: Check if chart-testing is already installed
+  stat:
+    path: "{{ ct_bin_path }}"
+  register: ct_stat
+
+- name: Download chart-testing archive
+  get_url:
+    url: "{{ ct_url }}"
+    dest: "/tmp/{{ ct_archive }}"
+    mode: '0644'
+  when: not ct_stat.stat.exists
+
+- name: Extract chart-testing binary
+  unarchive:
+    src: "/tmp/{{ ct_archive }}"
+    dest: "/tmp/"
+    remote_src: yes
+    creates: "/tmp/ct"
+  when: not ct_stat.stat.exists
+
+- name: Move chart-testing binary to /usr/local/bin
+  copy:
+    src: "/tmp/ct"
+    dest: "{{ ct_bin_path }}"
+    remote_src: yes
+    mode: '0755'
+  when: not ct_stat.stat.exists
+
+- name: Clean up chart-testing archive
+  file:
+    path: "/tmp/{{ ct_archive }}"
+    state: absent
+  when: ct_stat.stat.exists == false
+
+- name: Clean up extracted chart-testing binary
+  file:
+    path: "/tmp/ct"
+    state: absent
+  when: ct_stat.stat.exists == false

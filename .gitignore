@@ -1,1 +1,7 @@
 references/
+
+# User-specific inventory files (keep .example files)
+inventory/virthost.yml
+inventory/k8s-cluster.yml
+inventory/*.yml
+!inventory/*.example

@@ -1,0 +1,5 @@
+---
+# Default vars for kube_niceties role
+kubectl_bash_completion: true
+vm_image_user: "{{ ansible_user | default('fedora') }}"
+kubectl_bash_completion: true

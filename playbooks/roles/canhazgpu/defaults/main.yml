@@ -1,0 +1,6 @@
+canhazgpu_version: "v0.9.0"
+canhazgpu_release_url: "https://github.com/russellb/canhazgpu/releases/download/{{ canhazgpu_version }}/canhazgpu_Linux_x86_64.tar.gz"
+canhazgpu_port: 80
+canhazgpu_num_gpus: 8
+canhascheezeburger: plz
+canhazgpu_provider: nvidia

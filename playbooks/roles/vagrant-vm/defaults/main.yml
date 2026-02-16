@@ -1,0 +1,3 @@
+remote_vagrant_dir: "/opt/vagrant-vms/{{ vm_name }}"
+gpu_passthru: false
+gpu_pci_bdfs: []

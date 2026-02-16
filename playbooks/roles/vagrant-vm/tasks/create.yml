@@ -1,0 +1,112 @@
+- name: Ensure remote Vagrant VM dir exists
+  file:
+    path: "{{ remote_vagrant_dir }}"
+    state: directory
+    mode: '0755'
+
+- name: Render Vagrantfile on remote host
+  template:
+    src: "templates/Vagrantfile.j2"
+    dest: "{{ remote_vagrant_dir }}/Vagrantfile"
+
+- name: Bring up VM using Vagrant
+  ansible.builtin.shell: stdbuf -oL -eL vagrant up
+  args:
+    chdir: "{{ remote_vagrant_dir }}"
+
+- name: Wait for VM to be accessible via SSH
+  command: vagrant ssh -c "echo 'vm is up'" -- -o StrictHostKeyChecking=no
+  register: ssh_ready
+  retries: 20
+  delay: 5
+  until: ssh_ready.rc == 0
+  args:
+    chdir: "{{ remote_vagrant_dir }}"
+
+- name: Get VM IP (bridged or non-bridged)
+  block:
+
+    - name: Wait for eth1 to get an IPv4 address
+      command: >
+        vagrant ssh -c "ip -j a"
+      register: bridged_ip_json
+      changed_when: false
+      until: >
+        (
+          (bridged_ip_json.stdout | from_json)
+          | selectattr('ifname', 'equalto', 'eth1')
+          | map(attribute='addr_info')
+          | flatten
+          | selectattr('family', 'equalto', 'inet')
+          | list
+          | length
+        ) > 0
+      retries: 30
+      delay: 2
+      when: vm_network_mode == "bridged"
+      args:
+        chdir: "{{ remote_vagrant_dir }}"
+
+    - name: Extract bridged VM IP (eth1)
+      set_fact:
+        vagrant_vm_ip: >-
+          {{
+            (
+              (bridged_ip_json.stdout | from_json)
+              | selectattr('ifname', 'equalto', 'eth1')
+              | map(attribute='addr_info')
+              | flatten
+              | selectattr('family', 'equalto', 'inet')
+              | map(attribute='local')
+              | list
+              | first
+            )
+          }}
+      when: vm_network_mode == "bridged"
+
+    - name: Get SSH config from Vagrant (non-bridged)
+      command: vagrant ssh-config
+      register: vagrant_ssh_config
+      changed_when: false
+      when: vm_network_mode != "bridged"
+      args:
+        chdir: "{{ remote_vagrant_dir }}"
+
+    - name: Extract IP from SSH config (non-bridged)
+      set_fact:
+        vagrant_vm_ip: >-
+          {{
+            (
+              vagrant_ssh_config.stdout_lines
+              | select('search', 'HostName\\s+')
+              | list
+              | first
+            ).strip()
+            | regex_search('HostName\\s+(\\S+)', '\\1')
+          }}
+      when: vm_network_mode != "bridged"
+
+    - name: Set up a fact for delegation
+      set_fact:
+        remote_vagrant_info:
+          vm_name: "{{ vm_name }}"
+          vm_ip: "{{ vagrant_vm_ip }}"
+          vm_ansible_role: "{{ vm_ansible_role }}"
+      delegate_to: localhost
+      delegate_facts: true
+
+- name: Write inventory file
+  copy:
+    dest: "{{ playbook_dir }}/../inventory/{{ vm_name }}.yml"
+    content: |
+      all:
+        hosts:
+          {{ vm_ansible_role }}:
+            ansible_host: {{ vagrant_vm_ip }}
+            ansible_user: dev
+            ansible_become: true
+  delegate_to: localhost
+
+- name: Show result
+  debug:
+    msg: "Inventory created at ../inventory/{{ vm_name }}.yml with IP {{ vagrant_vm_ip }}"

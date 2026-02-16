@@ -1,0 +1,219 @@
+---
+- name: Change dnf.conf to enable fastestmirror
+  blockinfile:
+    path: /etc/dnf/dnf.conf
+    block: |
+      deltarpm=false
+      keepcache=true
+      fastestmirror=1
+
+- name: Upgrade all packages
+  dnf:
+    name: "*"
+    state: latest # noqa package-latest
+
+- name: update boot kernel to latest one
+  command: grubby --set-default-index=0 # noqa no-changed-when
+  tags:
+    - never
+    - update_kernel
+
+- name: reboot vm
+  reboot:
+    reboot_timeout: 600
+  tags:
+    - never
+    - update_kernel
+
+- name: Add additional packages
+  dnf:
+    name: "{{ vm_additional_pkgs }}"
+    state: present
+  when: vm_additional_pkgs is defined
+
+- name: Put SELinux in permissive mode
+  when: container_runtime == "containerd" or (container_runtime == "crio" and crio_version == "file")
+  block:
+    - name: edit /etc/selinux/config
+      lineinfile:
+        path: /etc/selinux/config
+        regexp: '^SELINUX='
+        line: 'SELINUX=permissive'
+        state: present
+        backrefs: yes
+    - name: set selinux permissive (runtime)
+      command: setenforce 0
+      ignore_errors: yes
+
+- name: remove zram-generator
+  dnf:
+    name: zram-generator
+    state: absent
+
+- name: disable swap
+  command: swapoff -a # noqa no-changed-when
+
+- name: install iptables-nft
+  dnf:
+    name: iptables-utils,iptables-nft
+    state: present
+  when: (kube_proxy_mode | default("iptables")) == "iptables"
+
+- name: switch iptables-nft
+  command: alternatives --set iptables /usr/sbin/iptables-nft # noqa no-changed-when
+  when: (kube_proxy_mode | default("iptables")) == "iptables"
+
+- name: install nftables
+  dnf:
+    name: nftables
+    state: present
+  when: (kube_proxy_mode | default("iptables")) == "nftables"
+
+# v1.29 supports cgroupv2, hence it is no longer required (this will be removed soon)
+#
+#- name: change cgroup to v1
+#  command: grubby --update-kernel=ALL --args="systemd.unified_cgroup_hierarchy=0" # noqa no-changed-when
+#  when: container_runtime != "crio_crun"
+
+#- name: reboot vm
+#  reboot:
+#    reboot_timeout: 600
+#  when: container_runtime != "crio_crun"
+
+- name: copy sysctl file (k8s.conf)
+  copy:
+    src: "{{ role_path }}/files/k8s.conf"
+    dest: "/etc/sysctl.d/k8s.conf"
+    mode: 0644
+  when: (kube_proxy_mode | default("iptables")) == "iptables"
+
+- name: copy sysctl file (99-kubernetes-cri.conf)
+  copy:
+    src: "{{ role_path }}/files/99-kubernetes-cri.conf"
+    dest: "/etc/sysctl.d/99-kubernetes-cri.conf"
+    mode: 0644
+
+- name: copy sysctl file (99-kubernetes-cri.conf)
+  copy:
+    src: "{{ role_path }}/files/20-ipv6.conf"
+    dest: "/etc/sysctl.d/20-ipv6.conf"
+    mode: 0644
+  when: kube_network_stack == "dual"
+
+- name: reload sysctl
+  command: sysctl --system # noqa no-changed-when
+
+- name: load required kernel modules(overlay)
+  command: modprobe overlay # noqa no-changed-when
+
+- name: load required kernel modules(br_netfilter)
+  command: modprobe br_netfilter # noqa no-changed-when
+  when: (kube_proxy_mode | default("iptables")) == "iptables"
+
+- name: install crun
+  dnf:
+    name: 'crun'
+    state: present
+  when: container_runtime == "crio_crun"
+
+- name: install proxy CA
+  get_url:
+    url:  "{{ container_proxy }}/ca.crt"
+    dest: "/etc/pki/ca-trust/source/anchors/docker_registry_proxy.crt"
+    owner: "{{ ansible_env.USER }}"
+    group: "{{ ansible_env.USER }}"
+    mode: 0766
+  when: container_proxy is defined
+
+- name: update CA
+  command: update-ca-trust # noqa no-changed-when
+
+- name: configure container registry proxy / cri-o
+  block:
+    - name: create service.d directory
+      file:
+        path: /etc/systemd/system/crio.service.d
+        state: directory
+        owner: root
+        group: root
+        mode: 0755
+    - name: create proxy config file
+      blockinfile:
+        path: /etc/systemd/system/crio.service.d/http-proxy.conf
+        create: yes
+        block: |
+          [Service]
+          Environment="HTTP_PROXY={{ container_proxy }}"
+          Environment="HTTPS_PROXY={{ container_proxy }}"
+          Environment="NO_PROXY={{ container_no_proxy }}"
+  when: container_proxy is defined and container_runtime != "containerd"
+
+- name: configure container registry proxy / containerd
+  block:
+    - name: create service.d directory
+      file:
+        path: /etc/systemd/system/containerd.service.d
+        state: directory
+        owner: root
+        group: root
+        mode: 0755
+    - name: create proxy config file
+      blockinfile:
+        path: /etc/systemd/system/containerd.service.d/http-proxy.conf
+        create: yes
+        block: |
+          [Service]
+          Environment="HTTP_PROXY={{ container_proxy }}"
+          Environment="HTTPS_PROXY={{ container_proxy }}"
+          Environment="NO_PROXY={{ container_no_proxy }}"
+  when: container_proxy is defined and container_runtime == "containerd"
+
+- name: install container runtime
+  block:
+    - import_tasks: containerd.yml
+      when: container_runtime == "containerd"
+#    - import_tasks: crio_crun.yml
+#      when: container_runtime == "crio_crun"
+    - import_tasks: crio_file.yml
+      when: container_runtime == "crio_file"
+    - import_tasks: crio_rpm.yml
+      when: container_runtime == "crio_rpm"
+    - import_tasks: crio_k8s.yml
+      when: container_runtime == "crio_k8s"
+
+- name: install cni plugins
+  block:
+    - name: create cni plugin directory
+      file:
+        path: /opt/cni/bin
+        state: directory
+        owner: root
+        group: root
+        mode: 0755
+    - name: install cni plugins
+      unarchive:
+        src: "{{ cni_plugins_url }}"
+        dest: /opt/cni/bin
+        mode: 0755
+        remote_src: yes
+
+- name: install container runtime
+  block:
+    - import_tasks: kubernetes_rpm.yml
+      when: kube_version == "rpm"
+    - import_tasks: kubernetes.yml
+      when: kube_version != "rpm"
+
+- name: configure cgroup-driver to systemd
+  lineinfile: >-
+    dest='/etc/sysconfig/kubelet'
+    state=present
+    backrefs=yes
+    regexp='^KUBELET_EXTRA_ARGS=$'
+    line='KUBELET_EXTRA_ARGS=--cgroup-driver=systemd'
+
+- name: enable kubelet
+  systemd:
+    name: kubelet
+    enabled: yes
+    state: started

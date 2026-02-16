@@ -1,0 +1,28 @@
+- name: Install python3.12 (RedHat)
+  ansible.builtin.dnf:
+    name: 
+      - python3.12
+      - python3.12-pip
+      - python3.12-setuptools
+    state: present
+  when: ansible_os_family == "RedHat"
+
+- name: Register python3.12 as an alternative for python3 (RedHat)
+  ansible.builtin.command: >
+    alternatives --install /usr/bin/python3 python3 /usr/bin/python3.12 1
+  when: ansible_os_family == "RedHat"
+
+- name: Set python3.12 as default python3 using alternatives (RedHat)
+  ansible.builtin.command: >
+    alternatives --set python3 /usr/bin/python3.12
+  when: ansible_os_family == "RedHat"
+
+- name: Set python3.12 as default python using alternatives (RedHat)
+  ansible.builtin.command: >
+    alternatives --install /usr/bin/python python /usr/bin/python3.12 1
+  when: ansible_os_family == "RedHat"
+
+- name: Seed pip for python3.12 (RedHat)
+  ansible.builtin.command: >-
+    /usr/bin/python3.12 -m ensurepip --upgrade
+  when: ansible_os_family == "RedHat"

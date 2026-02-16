@@ -1,0 +1,33 @@
+---
+# Default vars for kube_init role
+control_plane_listen_all: false
+
+# Kubernetes version defaults
+kubernetes_version: "1.34.1-0"
+
+# Network configuration  
+pod_network_cidr: "10.244.0.0"
+kube_network_stack: v4
+kube_proxy_mode: "iptables"
+
+# Container runtime
+container_runtime: crio_k8s
+
+# Image configuration
+#kube_image_repository: ""
+#kube_image_version: ""
+
+# kubeadm additional flags
+#kubeadm_flags: ""
+
+# API version selection (will be auto-detected based on kubeadm version)
+# v1beta4 for Kubernetes 1.31+ (default for 1.34+)
+# v1beta3 for Kubernetes < 1.31
+kubeadm_config_version: "auto"
+
+# Dynamic Resource Allocation (DRA) support
+# Enables DRA feature gates across all Kubernetes components
+# Only available in v1beta4 configuration (Kubernetes 1.31+)
+enable_dra: false
+
+resolve_conf_path: /etc/resolv.conf

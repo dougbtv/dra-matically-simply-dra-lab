@@ -1,0 +1,21 @@
+# Virthost Inventory - Customize this for your environment
+#
+# This file defines your virtualization host where VMs will be created.
+#
+# Instructions:
+#   1. Copy this file: cp inventory/virthost.yml.example inventory/virthost.yml
+#   2. Update ansible_host with your virthost's IP address
+#   3. Update ansible_user if different from 'root'
+#   4. Ensure SSH key-based auth is configured
+#
+# Example:
+#   ansible_host: 192.168.1.100  # CHANGE THIS to your virthost IP
+#   ansible_user: root            # Or your virthost username
+#
+
+all:
+  hosts:
+    virthost:
+      ansible_host: 192.168.1.100  # CHANGE THIS - Your virthost IP address
+      ansible_user: root            # CHANGE THIS if you use a different user
+      ansible_become: false         # Leave as 'false' if ansible_user is root

@@ -1,0 +1,208 @@
+---
+# Main tasks for k8shazgpu role
+
+- name: Check if golang is already installed
+  shell: go version
+  register: go_check
+  ignore_errors: true
+  changed_when: false
+  environment:
+    PATH: "/usr/local/go/bin:{{ ansible_env.PATH }}"
+
+- name: Display current go version if installed
+  debug:
+    msg: "Golang is already installed: {{ go_check.stdout }}"
+  when: go_check.rc == 0
+
+- name: Install golang
+  when: go_check.rc != 0
+  block:
+    - name: Download golang tarball
+      get_url:
+        url: "{{ golang_download_url }}"
+        dest: "/tmp/go{{ golang_version }}.linux-amd64.tar.gz"
+        mode: '0644'
+      become: true
+
+    - name: Remove old golang installation if exists
+      file:
+        path: "{{ golang_install_dir }}/go"
+        state: absent
+      become: true
+
+    - name: Extract golang tarball
+      unarchive:
+        src: "/tmp/go{{ golang_version }}.linux-amd64.tar.gz"
+        dest: "{{ golang_install_dir }}"
+        remote_src: true
+      become: true
+
+    - name: Add go binary to PATH in profile.d
+      copy:
+        dest: /etc/profile.d/golang.sh
+        content: |
+          export PATH=$PATH:/usr/local/go/bin
+          export GOPATH=$HOME/go
+          export PATH=$PATH:$GOPATH/bin
+        mode: '0644'
+      become: true
+
+    - name: Verify golang installation
+      shell: /usr/local/go/bin/go version
+      register: go_verify
+      changed_when: false
+
+    - name: Display golang installation result
+      debug:
+        msg: "Golang installed successfully: {{ go_verify.stdout }}"
+
+- name: Ensure git is installed (for cloning repo)
+  package:
+    name: git
+    state: present
+  become: true
+
+- name: Remove existing k8shazgpu clone directory
+  file:
+    path: "{{ k8shazgpu_clone_dir }}"
+    state: absent
+
+- name: Clone k8shazgpu repository
+  git:
+    repo: "{{ k8shazgpu_repo_url }}"
+    dest: "{{ k8shazgpu_clone_dir }}"
+    version: "{{ k8shazgpu_repo_branch }}"
+    force: true
+  register: git_clone
+
+- name: Display clone result
+  debug:
+    msg: "Repository cloned to {{ k8shazgpu_clone_dir }}"
+
+- name: Build k8shazgpu CLI binary
+  shell: make build-k8s
+  args:
+    chdir: "{{ k8shazgpu_clone_dir }}"
+  environment:
+    PATH: "/usr/local/go/bin:{{ ansible_env.PATH }}"
+    GOPATH: "{{ ansible_env.HOME }}/go"
+  register: build_result
+
+- name: Display build result
+  debug:
+    msg: "{{ build_result.stdout_lines }}"
+
+- name: Verify k8shazgpu binary was created
+  stat:
+    path: "{{ k8shazgpu_clone_dir }}/build/k8shazgpu"
+  register: binary_stat
+
+- name: Fail if binary not found
+  fail:
+    msg: "k8shazgpu binary was not created at {{ k8shazgpu_clone_dir }}/build/k8shazgpu"
+  when: not binary_stat.stat.exists
+
+- name: Copy k8shazgpu binary to system path
+  copy:
+    src: "{{ k8shazgpu_clone_dir }}/build/k8shazgpu"
+    dest: "{{ k8shazgpu_binary_install_path }}"
+    mode: '0755'
+    remote_src: true
+  become: true
+
+- name: Verify k8shazgpu binary is executable
+  command: "{{ k8shazgpu_binary_install_path }} --help"
+  register: k8shazgpu_help
+  changed_when: false
+  ignore_errors: true
+
+- name: Display k8shazgpu help output
+  debug:
+    msg: "{{ k8shazgpu_help.stdout_lines }}"
+  when: k8shazgpu_help.rc == 0
+
+- name: Deploy k8shazgpu to Kubernetes cluster
+  when: k8shazgpu_deploy | bool
+  block:
+    - name: Run make deploy
+      shell: make deploy
+      args:
+        chdir: "{{ k8shazgpu_clone_dir }}"
+      environment:
+        PATH: "/usr/local/go/bin:{{ ansible_env.PATH }}"
+        KUBECONFIG: "{{ kubeconfig | default('/home/' + ansible_user + '/.kube/admin.conf') }}"
+      register: deploy_result
+
+    - name: Display deployment result
+      debug:
+        msg: "{{ deploy_result.stdout_lines }}"
+
+    - name: Wait for k8shazgpu pods to be created
+      shell: kubectl get pods -A | grep -i canhazgpu-system | wc -l
+      register: pod_count
+      environment:
+        KUBECONFIG: "{{ kubeconfig | default('/home/' + ansible_user + '/.kube/admin.conf') }}"
+      until: pod_count.stdout | int > 0
+      retries: 10
+      delay: 5
+      changed_when: false
+      ignore_errors: true
+
+- name: Validate k8shazgpu deployment
+  when: k8shazgpu_validate | bool
+  block:
+    - name: Check canhazgpu-system pods
+      shell: kubectl get pods -A | grep -i canhazgpu-system
+      register: canhazgpu_pods
+      environment:
+        KUBECONFIG: "{{ kubeconfig | default('/home/' + ansible_user + '/.kube/admin.conf') }}"
+      changed_when: false
+
+    - name: Display canhazgpu pods
+      debug:
+        msg: "{{ canhazgpu_pods.stdout_lines }}"
+
+    - name: Check canhazgpu-controller pod status
+      shell: kubectl get pods -n canhazgpu-system -l control-plane=controller -o wide
+      register: controller_status
+      environment:
+        KUBECONFIG: "{{ kubeconfig | default('/home/' + ansible_user + '/.kube/admin.conf') }}"
+      changed_when: false
+      ignore_errors: true
+
+    - name: Display controller status
+      debug:
+        msg: "{{ controller_status.stdout_lines }}"
+      when: controller_status.rc == 0
+
+    - name: Check canhazgpu-nodeagent daemonset
+      shell: kubectl get daemonset -n canhazgpu-system
+      register: daemonset_status
+      environment:
+        KUBECONFIG: "{{ kubeconfig | default('/home/' + ansible_user + '/.kube/admin.conf') }}"
+      changed_when: false
+      ignore_errors: true
+
+    - name: Display daemonset status
+      debug:
+        msg: "{{ daemonset_status.stdout_lines }}"
+      when: daemonset_status.rc == 0
+
+    - name: Validation summary
+      debug:
+        msg: |
+          ============================================
+          k8shazgpu Deployment Validation Complete
+          ============================================
+          
+          Binary installed at: {{ k8shazgpu_binary_install_path }}
+          
+          Verify deployment:
+          - kubectl get pods -A | grep canhazgpu-system
+          - kubectl get daemonset -n canhazgpu-system
+          - kubectl get deployment -n canhazgpu-system
+          
+          Expected pods:
+          - canhazgpu-controller-*
+          - canhazgpu-kubeletplugin-* (one per node)
+          - canhazgpu-nodeagent-* (one per node)

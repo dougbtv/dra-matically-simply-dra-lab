@@ -1,0 +1,22 @@
+---
+# Playbook to install k8shazgpu DRA resource controller
+#
+# Prerequisites:
+#   - Kubernetes cluster with DRA support (1.35+)
+#   - fake-gpu-operator deployed (via 03-deploy-demo-assets.yml)
+#
+# Usage:
+#   ansible-playbook -i inventory/k8s-cluster.yml playbooks/04-install-k8shazgpu.yml
+#
+# This playbook will:
+#   - Install k8shazgpu DRA controller
+#   - Configure GPU resource management
+#   - Enable dynamic GPU allocation for pods
+#
+
+- name: Install k8shazgpu
+  hosts: k8s_control_plane
+  become: true
+  vars:
+  roles:
+    - k8shazgpu

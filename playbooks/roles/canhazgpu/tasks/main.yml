@@ -1,0 +1,159 @@
+- name: Ensure Redis is installed (Ubuntu)
+  apt:
+    name: redis-server
+    state: present
+    update_cache: "{{ apt_update_cache | default(true) }}"
+  when: ansible_facts['os_family'] == "Debian"
+
+- name: Ensure Redis is installed (CentOS/RHEL)
+  yum:
+    name: redis
+    state: present
+    update_cache: yes
+  when: ansible_facts['os_family'] == "RedHat"
+
+- name: Set redis config path (Ubuntu)
+  set_fact:
+    redis_conf_path: /etc/redis/redis.conf
+#   when: ansible_facts['os_family'] == "Debian"
+
+# - name: Set redis config path (CentOS/RHEL)
+#   set_fact:
+#     redis_conf_path: /etc/redis.conf
+#   when: ansible_facts['os_family'] == "RedHat"
+
+- name: Ensure /run/redis exists on boot
+  copy:
+    dest: /etc/tmpfiles.d/redis.conf
+    content: |
+      d /run/redis 0755 redis redis -
+    owner: root
+    group: root
+    mode: '0644'
+  become: true
+
+- name: Ensure /run/redis exists now
+  file:
+    path: /run/redis
+    state: directory
+    owner: redis
+    group: redis
+    mode: '0755'
+  become: true
+
+- name: Remove existing save lines from redis.conf
+  lineinfile:
+    path: "{{ redis_conf_path }}"
+    regexp: '^save '
+    state: absent
+  become: true
+
+- name: Ensure desired save policy is set (save 60 1)
+  lineinfile:
+    path: "{{ redis_conf_path }}"
+    insertafter: EOF
+    line: 'save 60 1'
+    state: present
+  become: true
+
+- name: Enable Redis UNIX socket
+  lineinfile:
+    path: "{{ redis_conf_path }}"
+    regexp: '^unixsocket '
+    line: 'unixsocket /run/redis/redis.sock'
+    state: present
+  become: true
+
+- name: Set Redis UNIX socket permissions
+  lineinfile:
+    path: "{{ redis_conf_path }}"
+    regexp: '^unixsocketperm '
+    line: 'unixsocketperm 0770'
+    state: present
+  become: true
+
+- name: Enable AOF persistence
+  lineinfile:
+    path: "{{ redis_conf_path }}"
+    regexp: '^appendonly '
+    line: 'appendonly yes'
+    state: present
+    backup: true
+
+- name: Set AOF fsync policy (everysec)
+  lineinfile:
+    path: "{{ redis_conf_path }}"
+    regexp: '^appendfsync '
+    line: 'appendfsync everysec'
+    state: present
+    backup: true
+
+- name: Restart Redis to apply changes (Ubuntu)
+  service:
+    name: redis-server
+    state: restarted
+    enabled: true
+  when: ansible_facts['os_family'] == "Debian"
+
+- name: Restart Redis to apply changes (CentOS/RHEL)
+  service:
+    name: redis
+    state: restarted
+    enabled: true
+  when: ansible_facts['os_family'] == "RedHat"
+
+- name: Download canhazgpu release
+  ansible.builtin.get_url:
+    url: "{{ canhazgpu_release_url }}"
+    dest: /tmp/canhazgpu_Linux_x86_64.tar.gz
+    mode: '0644'
+
+- name: Extract canhazgpu release
+  ansible.builtin.unarchive:
+    src: /tmp/canhazgpu_Linux_x86_64.tar.gz
+    dest: /tmp/
+    remote_src: yes
+
+- name: Move canhazgpu binary to /usr/local/bin
+  ansible.builtin.copy:
+    src: /tmp/canhazgpu
+    dest: /usr/local/bin/canhazgpu
+    mode: '0755'
+    remote_src: yes
+
+- name: Create chg symlink for canhazgpu
+  ansible.builtin.file:
+    src: /usr/local/bin/canhazgpu
+    dest: /usr/local/bin/chg
+    state: link
+    owner: root
+    group: root
+
+- name: Move autocomplete script to bash completion
+  ansible.builtin.copy:
+    src: /tmp/autocomplete_canhazgpu.sh
+    dest: /etc/bash_completion.d/autocomplete_canhazgpu.sh
+    mode: '0644'
+    remote_src: yes
+
+- name: Set canhazgpu to {{ canhazgpu_num_gpus }} gpus
+  ansible.builtin.command:
+    cmd: /usr/local/bin/canhazgpu admin --gpus {{ canhazgpu_num_gpus }} --provider {{ canhazgpu_provider }}
+  ignore_errors: true
+
+- name: Template the systemd service file for canhazgpu web
+  register: canhazgpu_web_service
+  template:
+    src: ../templates/canhazgpu-web.service.j2
+    dest: /etc/systemd/system/canhazgpu-web.service
+
+- name: Reload systemd to recognize canhazgpu-web service
+  ansible.builtin.systemd:
+    daemon_reload: true
+  when: canhazgpu_web_service.changed
+
+- name: Enable and start canhazgpu-web service
+  ansible.builtin.systemd:
+    name: canhazgpu-web
+    enabled: true
+    state: restarted

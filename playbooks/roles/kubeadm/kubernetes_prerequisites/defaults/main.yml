@@ -1,0 +1,7 @@
+---
+# Default vars for kubernetes prerequisites
+kubernetes_version: "1.34.1-0"
+kubernetes_apt_key_url: "https://pkgs.k8s.io/core:/stable:/v1.34/deb/Release.key"
+kubernetes_apt_repository: "https://pkgs.k8s.io/core:/stable:/v1.34/deb/"
+container_runtime: "containerd"
+docker_version: "5:27.*"

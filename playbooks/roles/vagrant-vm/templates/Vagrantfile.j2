@@ -1,0 +1,43 @@
+Vagrant.configure("2") do |config|
+  config.vm.box = "{{ vm_image_nickname }}"
+  config.vm.hostname = "{{ vm_name }}"
+  config.vm.define "{{ vm_name }}"
+
+  config.vm.provider :libvirt do |libvirt|
+    libvirt.memory = {{ vm_ram }}
+    libvirt.cpus = {{ vm_vcpus }}
+    libvirt.default_prefix = "{{ vm_name }}"
+
+    # Attach a small secondary disk for testing
+    libvirt.storage :file, :size => '5G', :type => 'qcow2', :bus => 'virtio'
+
+    {% if gpu_passthru and gpu_pci_bdfs %}
+    # GPU passthrough (all functions)
+    {% for bdf in gpu_pci_bdfs %}
+    {% set parts = bdf.split(':') %}
+    {% set domain = '0x' + parts[0] %}
+    {% set bus = '0x' + parts[1] %}
+    {% set slot = '0x' + parts[2].split('.')[0] %}
+    {% set function = '0x' + parts[2].split('.')[1] %}
+    libvirt.pci :domain => '{{ domain }}', :bus => '{{ bus }}', :slot => '{{ slot }}', :function => '{{ function }}'
+    {% endfor %}
+    {% endif %}
+  end
+
+  config.ssh.insert_key = false
+
+  config.vm.provision "shell", inline: <<-SHELL
+    useradd -m -s /bin/bash dev || true
+    mkdir -p /home/dev/.ssh
+    echo "{{ ssh_public_keys[0] }}" > /home/dev/.ssh/authorized_keys
+    chmod 600 /home/dev/.ssh/authorized_keys
+    chown -R dev:dev /home/dev/.ssh
+    echo 'dev ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/dev
+  SHELL
+
+  {% if vm_network_mode == 'bridged' %}
+  config.vm.network "public_network",
+    type: "bridge",
+    dev: "{{ vm_bridge_device }}"
+  {% endif %}
+end

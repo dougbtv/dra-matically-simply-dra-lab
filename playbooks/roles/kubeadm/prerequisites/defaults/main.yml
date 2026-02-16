@@ -1,0 +1,85 @@
+---
+# Default vars for kubeadm prerequisites role
+vm_image_user: "{{ ansible_user | default('fedora') }}"
+
+# Use official fedora cloud image
+vm_image_url: https://download.fedoraproject.org/pub/fedora/linux/releases/40/Cloud/x86_64/images/Fedora-Cloud-Base-Generic.x86_64-40-1.14.qcow2
+vm_image_sha256: ac58f3c35b73272d5986fa6d3bc44fd246b45df4c334e99a07b3bbd00684adee
+
+vm_network_name: "multus_eth1"
+vm_network_cidr: "10.1.1.0/24"
+
+# additional package you want to install nodes
+vm_additional_pkgs:
+  - "sshfs"
+
+# Kubernetes network stack
+# valid value:
+# - v4
+# - v6 only (not supported yet)
+# - dual
+kube_network_stack: v4
+
+# What container runtime do we use?
+# valid values:
+# - containerd (cgroup-v1)
+# - crio_rpm  (crio from rpm file)
+# - crio_file (crio from release tar ball)
+# - crio_crun (crio with cgroup-v2)
+# - crio_k8s  (crio from k8s repo/default)
+# note: other value makes to skip install container runtime
+container_runtime: crio_k8s
+
+# container registry http/https proxy
+# i.e. https://github.com/rpardini/docker-registry-proxy
+#container_proxy: http://192.168.123.254:3128/
+# container_no_proxy should include k8s service cidr and pod ip cidr
+#container_no_proxy: quay.io,10.96.0.0/12,10.244.0.0/16
+
+# crio rpm file path (in case of crio_rpm)
+#crio_rpm_file: "/home/foobar/src/quick-k8s-rpms/RPMS/x86_64/cri-o-test-1.fc37.x86_64.rpm"
+
+# crio release URL (in case of 'container_runtime: crio_file')
+# crio_file_url: "https://storage.googleapis.com/cri-o/artifacts/cri-o.amd64.c0b2474b80fd0844b883729bda88961bed7b472b.tar.gz"
+crio_file_url: "https://storage.googleapis.com/cri-o/artifacts/cri-o.amd64.v1.34.0.tar.gz"
+
+# containerd release URL
+containerd_url: "https://github.com/containerd/containerd/releases/download/v2.1.4/containerd-2.1.4-linux-amd64.tar.gz"
+
+# CNI reference plugin URL
+cni_plugins_url: "https://github.com/containernetworking/plugins/releases/download/v1.4.0/cni-plugins-linux-amd64-v1.4.0.tgz"
+
+# Kube Version (used for kubernetes.repo as well as crio.repo/crio_k8s)
+kube_version: "v1.34"
+
+#specify kube-proxy mode (iptables, nftables)
+kube_proxy_mode: "iptables"
+
+# specify RPM directory for kubernetes (if kube_version: "rpm")
+# there must be kubeadm, kubectl, kubelet RPM packages
+#kube_rpm_path: "/home/foobar/src/quick-k8s-rpms/RPMS/x86_64"
+
+# specify kubernetes image repository and image version
+#kube_image_repository: "quay.io/foobar"
+#kube_image_version: "v1.27.0-alpha"
+
+# Kube RPM Version (i.e. suffix of RPM package)
+# Accepts "" (for latest) or the version part of an RPM (typically based on the kubelet RPM).
+# For example if you were to look at `dnf --showduplicates  list kubelet`
+# You'd use "1.19.9-0" here, such as (don't miss '-' at the beginning!) :
+# Default: "" (use latest)
+#kube_rpm_version: "-1.19.9-0"
+
+# kubeadm additional flags
+#kubeadm_flags: "--skip-phases=addon/kube-proxy"
+
+# Kubectl proxy.
+kubectl_proxy_port: 8088
+
+# Pod network CIDR
+pod_network_cidr: "10.244.0.0"
+
+#ovn_image_repo: "docker.io/ovnkube/ovn-daemonset-u:latest"
+ovn_image_repo: "ghcr.io/ovn-org/ovn-kubernetes/ovn-kube-f:master"
+#ovn_gateway_mode: "shared"
+ovn_gateway_mode: "local"

@@ -1,0 +1,30 @@
+- name: Get latest kubectl version
+  uri:
+    url: https://dl.k8s.io/release/stable.txt
+    return_content: yes
+  register: kubectl_version
+
+- name: Read current kubectl version file if exists
+  slurp:
+    src: /etc/kubectl.version
+  register: current_kubectl_version_file
+  ignore_errors: yes
+
+- name: Set current kubectl version fact
+  set_fact:
+    current_kubectl_version: "{{ current_kubectl_version_file['content'] | b64decode | trim if current_kubectl_version_file['content'] is defined else '' }}"
+
+- name: Download kubectl binary if version is different
+  get_url:
+    url: "https://dl.k8s.io/release/{{ kubectl_version.content | trim }}/bin/linux/amd64/kubectl"
+    dest: /usr/local/bin/kubectl
+    mode: '0755'
+    force: yes
+  when: current_kubectl_version != (kubectl_version.content | trim)
+
+- name: Save latest kubectl version to file
+  copy:
+    content: "{{ kubectl_version.content | trim }}"
+    dest: /etc/kubectl.version
+    mode: '0644'
+  when: current_kubectl_version != (kubectl_version.content | trim)

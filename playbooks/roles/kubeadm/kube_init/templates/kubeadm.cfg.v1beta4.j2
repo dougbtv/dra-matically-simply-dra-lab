@@ -1,0 +1,133 @@
+# Full parameters @ https://kubernetes.io/docs/reference/setup-tools/kubeadm/kubeadm-init/
+{% set kubeadm_advertise_address = (kubeadm_advertise_address | default(ansible_default_ipv4.address)) %}
+# for v1.34+ (https://kubernetes.io/docs/reference/setup-tools/kubeadm/kubeadm-config/)
+apiVersion: kubeadm.k8s.io/v1beta4
+bootstrapTokens:
+- groups:
+  - system:bootstrappers:kubeadm:default-node-token
+  ttl: 24h0m0s
+  usages:
+  - signing
+  - authentication
+kind: InitConfiguration
+localAPIEndpoint:
+  advertiseAddress: {{ kubeadm_advertise_address }}
+  bindPort: 6443
+nodeRegistration:
+{% if container_runtime == "crio" or container_runtime == "crio_k8s" or container_runtime == "crio_rpm" or container_runtime == "crio_file" or container_runtime == "crio_crun" %}
+  criSocket: unix:///var/run/crio/crio.sock
+{% elif container_runtime == "containerd" %}
+  criSocket: unix:///run/containerd/containerd.sock
+{% endif %}
+  imagePullPolicy: IfNotPresent
+  imagePullSerial: true
+  name: {{ ansible_hostname }}
+{% if enable_dra | default(false) %}
+  kubeletExtraArgs:
+  - name: feature-gates
+    value: DynamicResourceAllocation=true
+{% endif %}
+  taints:
+  - effect: NoSchedule
+    key: node-role.kubernetes.io/control-plane
+timeouts:
+  controlPlaneComponentHealthCheck: 4m0s
+  discovery: 5m0s
+  etcdAPICall: 2m0s
+  kubeletHealthCheck: 4m0s
+  kubernetesAPICall: 1m0s
+  tlsBootstrap: 5m0s
+  upgradeManifests: 5m0s
+---
+apiServer:
+{% if control_plane_listen_all %}
+  advertiseAddress: 0.0.0.0
+{% endif %}
+{% if enable_dra | default(false) %}
+  extraArgs:
+  - name: runtime-config
+    value: resource.k8s.io/v1beta1=true
+  - name: feature-gates
+    value: DynamicResourceAllocation=true
+{% endif %}
+apiVersion: kubeadm.k8s.io/v1beta4
+caCertificateValidityPeriod: 87600h0m0s
+certificateValidityPeriod: 8760h0m0s
+certificatesDir: /etc/kubernetes/pki
+clusterName: kubernetes
+controllerManager:
+{% if enable_dra | default(false) %}
+  extraArgs:
+  - name: feature-gates
+    value: DynamicResourceAllocation=true
+{% else %}
+  {}
+{% endif %}
+dns: {}
+encryptionAlgorithm: RSA-2048
+etcd:
+  local:
+    dataDir: /var/lib/etcd
+{% if kube_image_repository|default("") != "" %}
+imageRepository: {{ kube_image_repository }}
+{% else %}
+imageRepository: registry.k8s.io
+{% endif %}
+kind: ClusterConfiguration
+{% if kube_image_version|default("") != "" %}
+kubernetesVersion: {{ kube_image_version }}
+{% elif kubernetes_version|default("") != "" %}
+kubernetesVersion: v{{ kubernetes_version.split('-')[0] }}
+{% endif %}
+networking:
+  dnsDomain: cluster.local
+{% if kube_network_stack == "dual" %}
+  serviceSubnet: "192.167.0.0/16,fd03::/120"
+  podSubnet: "192.168.0.0/16,fd04::/64"
+{% else %}
+  podSubnet: {{ pod_network_cidr }}/16
+  serviceSubnet: 10.96.0.0/12
+{% endif %}
+{% if groups.lb is defined and groups.lb|length > 0 %}
+{% for node in groups["lb"] %}
+controlPlaneEndpoint: {{ hostvars[node]['ansible_host'] }}:6443
+{% endfor %}
+{% endif %}
+proxy: {}
+scheduler:
+{% if enable_dra | default(false) %}
+  extraArgs:
+  - name: feature-gates
+    value: DynamicResourceAllocation=true
+{% else %}
+  {}
+{% endif %}
+{% if kube_network_stack == "dual" %}
+featureGates:
+  IPv6DualStack: true
+{% endif %}
+---
+# see https://pkg.go.dev/k8s.io/kubelet/config/v1beta1#KubeletConfiguration for the detail
+kind: KubeletConfiguration
+apiVersion: kubelet.config.k8s.io/v1beta1
+{% if container_runtime == "crio" or container_runtime == "crio_k8s" or container_runtime == "crio_rpm" or container_runtime == "crio_file" or container_runtime == "crio_crun" %}
+cgroupDriver: systemd
+{% endif %}
+resolvConf: {{ resolve_conf_path }}
+{% if kube_network_stack == "dual" or enable_dra | default(false) %}
+featureGates:
+{% if kube_network_stack == "dual" %}
+  IPv6DualStack: true
+{% endif %}
+{% if enable_dra | default(false) %}
+  DynamicResourceAllocation: true
+{% endif %}
+{% endif %}
+{% if kube_proxy_mode|default("iptables") == "nftables" %}
+---
+apiVersion: kubeproxy.config.k8s.io/v1alpha1
+kind: KubeProxyConfiguration
+featureGates:
+  NFTablesProxyMode: true
+mode: "nftables"
+{% endif %}

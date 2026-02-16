@@ -1,0 +1,4 @@
+---
+# Default vars for kube_join_cluster role
+vm_image_user: "{{ ansible_user | default('fedora') }}"
+container_runtime: crio_k8s
