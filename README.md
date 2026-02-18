@@ -2,7 +2,7 @@
 
 Minimal, self-contained Ansible playbooks for setting up a Kubernetes 1.35 cluster with Dynamic Resource Allocation (DRA) support, simulated H100 GPUs, and K8s GPU resource management.
 
-Perfect for conference demos, learning DRA, or testing GPU resource allocation without actual hardware.
+Perfect for learning DRA or testing GPU resource allocation without actual hardware.
 
 ## Architecture Overview
 
@@ -190,4 +190,4 @@ MIT - Use freely for demos, labs, and learning.
 
 ## Credits
 
-Created for KubeCon demos by [@dougbtv](https://github.com/dougbtv). Based on the vLLM-omni project's DRA integration work.
+Created for KubeCon demos by [@dougbtv](https://github.com/dougbtv).
