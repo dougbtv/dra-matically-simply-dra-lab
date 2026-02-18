@@ -50,8 +50,20 @@
     name: zram-generator
     state: absent
 
-- name: disable swap
+- name: disable swap immediately
   command: swapoff -a # noqa no-changed-when
+
+- name: remove swap from /etc/fstab to persist across reboots
+  replace:
+    path: /etc/fstab
+    regexp: '^([^#].*?\sswap\s+.*)$'
+    replace: '# \1'
+
+- name: disable swap.target in systemd
+  systemd:
+    name: swap.target
+    masked: yes
+  ignore_errors: yes
 
 - name: install iptables-nft
   dnf:
@@ -85,7 +97,6 @@
     src: "{{ role_path }}/files/k8s.conf"
     dest: "/etc/sysctl.d/k8s.conf"
     mode: 0644
-  when: (kube_proxy_mode | default("iptables")) == "iptables"
 
 - name: copy sysctl file (99-kubernetes-cri.conf)
   copy:
@@ -108,7 +119,14 @@
 
 - name: load required kernel modules(br_netfilter)
   command: modprobe br_netfilter # noqa no-changed-when
-  when: (kube_proxy_mode | default("iptables")) == "iptables"
+
+- name: ensure kernel modules persist across reboots
+  copy:
+    dest: /etc/modules-load.d/k8s.conf
+    content: |
+      overlay
+      br_netfilter
+    mode: '0644'
 
 - name: install crun
   dnf:

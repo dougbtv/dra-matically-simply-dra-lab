@@ -69,6 +69,7 @@ ansible-playbook playbooks/03-deploy-demo-assets.yml -i inventory/k8s-cluster.ym
 ```
 
 This deploys:
+- CDI (Container Device Interface) spec files for nvidia.com/gpu=all
 - canhazgpu service (fake GPU simulator)
 - fake-gpu-operator Helm chart
 - Test pod manifests
@@ -144,6 +145,12 @@ Edit `playbooks/files/dra-h100-values.yaml`:
 - Check canhazgpu service: `systemctl status canhazgpu-web`
 - Verify fake-gpu-operator pods: `kubectl get pods -n fake-gpu-operator`
 - Check node labels: `kubectl get nodes --show-labels | grep gpu`
+
+### Pods Failing with CDI Device Injection Error
+- If pods fail with "CDI device injection failed: unresolvable CDI devices nvidia.com/gpu=all":
+  - Verify CDI spec exists: `ls -la /var/run/cdi/nvidia-gpu.yaml` on each node
+  - Check CDI spec content: `cat /var/run/cdi/nvidia-gpu.yaml`
+  - Re-run playbook 03 if CDI spec is missing (it's created in tmpfs and lost on reboot)
 
 ## Project Structure
 

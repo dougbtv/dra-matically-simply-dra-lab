@@ -16,15 +16,13 @@
 #   - Optionally deploy test pod with DRA claim
 #
 
-- name: Deploy demo assets (fake GPU operator with DRA)
+- name: Prepare nodes for DRA demo
   hosts: k8s_control_plane
   become: false
 
   vars:
     kubeconfig: "/home/{{ ansible_user }}/.kube/admin.conf"
     gpu_operator_namespace: gpu-operator
-    gpu_operator_chart_version: latest
-    deploy_test_pod: false  # Set to true to deploy test pod
 
   environment:
     KUBECONFIG: "{{ kubeconfig }}"
@@ -58,6 +56,57 @@
         kubectl label node {{ item }} run.ai/simulated-gpu-node-pool=default --overwrite
       loop: "{{ groups['k8s_cluster'] }}"
 
+- name: Create CDI spec files on all nodes
+  hosts: k8s_cluster
+  become: true
+
+  tasks:
+    - name: Create CDI directory
+      file:
+        path: /var/run/cdi
+        state: directory
+        mode: '0755'
+        owner: root
+        group: root
+
+    - name: Create CDI spec file for nvidia.com/gpu=all
+      copy:
+        dest: /var/run/cdi/nvidia-gpu.yaml
+        mode: '0644'
+        owner: root
+        group: root
+        content: |
+          cdiVersion: 0.5.0
+          kind: nvidia.com/gpu
+          devices:
+            - name: all
+              containerEdits:
+                env:
+                  - NVIDIA_VISIBLE_DEVICES=all
+
+    - name: Create tmpfiles.d entry for CDI directory persistence
+      copy:
+        dest: /etc/tmpfiles.d/cdi.conf
+        mode: '0644'
+        owner: root
+        group: root
+        content: |
+          d /var/run/cdi 0755 root root -
+
+- name: Deploy fake-gpu-operator Helm chart
+  hosts: k8s_control_plane
+  become: false
+
+  vars:
+    kubeconfig: "/home/{{ ansible_user }}/.kube/admin.conf"
+    gpu_operator_namespace: gpu-operator
+    gpu_operator_chart_version: latest
+    deploy_test_pod: false  # Set to true to deploy test pod
+
+  environment:
+    KUBECONFIG: "{{ kubeconfig }}"
+
+  tasks:
     - name: Check if Helm is installed
       command: helm version
       register: helm_check
