@@ -1,0 +1,111 @@
+---
+- name: Provision lab users from CSV
+  hosts: k8s_control_plane
+  become: true
+  vars:
+    csv_file: "{{ playbook_dir }}/../users.csv"
+    kubeconfig_source: "/home/dev/.kube/admin.conf"
+
+  tasks:
+    - name: Read CSV file
+      ansible.builtin.slurp:
+        src: "{{ csv_file }}"
+      register: csv_content
+      delegate_to: localhost
+      become: false
+
+    - name: Parse CSV into user list
+      ansible.builtin.set_fact:
+        lab_users: "{{ (csv_content.content | b64decode).split('\n')[11:] |
+                       select('match', '^\"[0-9]{4}/') |
+                       map('regex_replace', '\"', '') |
+                       map('split', ',') |
+                       map('list') |
+                       list }}"
+
+    - name: Display parsed users for review
+      ansible.builtin.debug:
+        msg: "Will provision {{ lab_users | length }} users"
+
+    - name: Create users with home directories
+      ansible.builtin.user:
+        name: "{{ item[3] if item[1] == 'No.' else item[2] }}"
+        state: present
+        create_home: true
+        shell: /bin/bash
+      loop: "{{ lab_users }}"
+      when: item | length >= 4
+
+    - name: Fetch SSH keys from GitHub for users with GitHub accounts
+      ansible.builtin.uri:
+        url: "https://github.com/{{ item[2] }}.keys"
+        return_content: true
+      register: github_keys
+      loop: "{{ lab_users }}"
+      when:
+        - item | length >= 4
+        - item[1] == 'Yes!'
+        - item[2] | length > 0
+      failed_when: false
+
+    - name: Set up authorized_keys for GitHub users
+      ansible.posix.authorized_key:
+        user: "{{ item.item[2] }}"
+        key: "{{ item.content }}"
+        state: present
+      loop: "{{ github_keys.results }}"
+      when:
+        - item.skipped is not defined
+        - item.status == 200
+        - item.content | length > 0
+
+    - name: Set up authorized_keys for non-GitHub users
+      ansible.posix.authorized_key:
+        user: "{{ item[3] }}"
+        key: "{{ item[4] }}"
+        state: present
+      loop: "{{ lab_users }}"
+      when:
+        - item | length >= 5
+        - item[1] == 'No.'
+        - item[3] | length > 0
+        - item[4] | length > 0
+
+    - name: Create .kube directory for each user
+      ansible.builtin.file:
+        path: "/home/{{ item[3] if item[1] == 'No.' else item[2] }}/.kube"
+        state: directory
+        owner: "{{ item[3] if item[1] == 'No.' else item[2] }}"
+        group: "{{ item[3] if item[1] == 'No.' else item[2] }}"
+        mode: '0755'
+      loop: "{{ lab_users }}"
+      when: item | length >= 4
+
+    - name: Copy kubeconfig to each user's home directory
+      ansible.builtin.copy:
+        src: "{{ kubeconfig_source }}"
+        dest: "/home/{{ item[3] if item[1] == 'No.' else item[2] }}/.kube/config"
+        owner: "{{ item[3] if item[1] == 'No.' else item[2] }}"
+        group: "{{ item[3] if item[1] == 'No.' else item[2] }}"
+        mode: '0600'
+        remote_src: true
+      loop: "{{ lab_users }}"
+      when: item | length >= 4
+
+    - name: Set KUBECONFIG environment variable in user's .bashrc
+      ansible.builtin.lineinfile:
+        path: "/home/{{ item[3] if item[1] == 'No.' else item[2] }}/.bashrc"
+        line: "export KUBECONFIG=$HOME/.kube/config"
+        state: present
+        create: true
+        owner: "{{ item[3] if item[1] == 'No.' else item[2] }}"
+        group: "{{ item[3] if item[1] == 'No.' else item[2] }}"
+        mode: '0644'
+      loop: "{{ lab_users }}"
+      when: item | length >= 4
+
+    - name: Display provisioned users
+      ansible.builtin.debug:
+        msg: "Provisioned user: {{ item[3] if item[1] == 'No.' else item[2] }}"
+      loop: "{{ lab_users }}"
+      when: item | length >= 4
