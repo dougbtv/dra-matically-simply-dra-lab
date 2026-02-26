@@ -104,6 +104,29 @@
       loop: "{{ lab_users }}"
       when: item | length >= 4
 
+    - name: Clone vllm repo to temporary location
+      ansible.builtin.git:
+        repo: https://github.com/dougbtv/vllm.git
+        dest: /tmp/vllm-template
+        version: demo/kubecon
+        force: true
+
+    - name: Copy vllm repo to each user's home directory
+      ansible.builtin.copy:
+        src: /tmp/vllm-template/
+        dest: "/home/{{ item[3] if item[1] == 'No.' else item[2] }}/vllm"
+        owner: "{{ item[3] if item[1] == 'No.' else item[2] }}"
+        group: "{{ item[3] if item[1] == 'No.' else item[2] }}"
+        mode: preserve
+        remote_src: true
+      loop: "{{ lab_users }}"
+      when: item | length >= 4
+
+    - name: Clean up temporary vllm clone
+      ansible.builtin.file:
+        path: /tmp/vllm-template
+        state: absent
+
     - name: Display provisioned users
       ansible.builtin.debug:
         msg: "Provisioned user: {{ item[3] if item[1] == 'No.' else item[2] }}"
