@@ -51,22 +51,6 @@ To simulate this workflow we use **canhazgpu (`chg`)**.
 
 ---
 
-## Reserve a GPU
-
-Reserve a GPU for 2 hours:
-
-```
-chg reserve d 2h
-```
-
-Check your reservation:
-
-```
-chg status
-```
-
----
-
 ## Run a process on your reserved GPU
 
 You might run something long-lived.
@@ -91,6 +75,29 @@ chg status
 ```
 
 You now have a GPU **reserved and occupied**.
+
+## Manual GPU reservation with `canhazgpu` (optional!)
+
+Reserve a GPU for 5 minutes:
+
+```
+chg reserve d 5m
+```
+
+It'll say you need to set an env var (you can ignore it)
+
+Check your reservation:
+
+```
+chg status
+```
+
+And then you can release it:
+
+```
+chg release
+```
+
 
 ---
 
