@@ -101,21 +101,6 @@ chg release
 
 ---
 
-## Observe the cluster
-
-Even though this workflow feels local, the GPUs still exist on Kubernetes nodes.
-
-You can inspect the cluster:
-
-```
-kubectl get nodes
-kubectl get pods -A
-```
-
-Notice where workloads are running.
-
----
-
 # 2. Using GPUs as a vLLM Developer
 
 Now let's switch roles.
@@ -192,6 +177,19 @@ You should eventually see the output:
 ```
 Hello, world!
 ```
+
+## Observe the cluster
+
+Even though this workflow feels local, the GPUs still exist on Kubernetes nodes.
+
+You can inspect the cluster:
+
+```
+kubectl get nodes
+kubectl get pods -A
+```
+
+Notice where workloads are running.
 
 ---
 
