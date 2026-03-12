@@ -56,9 +56,11 @@
       debug:
         msg: "Golang installed successfully: {{ go_verify.stdout }}"
 
-- name: Ensure git is installed (for cloning repo)
+- name: Ensure build tools are installed
   package:
-    name: git
+    name:
+      - git
+      - make
     state: present
   become: true
 

@@ -30,6 +30,9 @@
     kubernetes_version: "1.35.0-0"
     enable_dra: true
 
+    # Skip sshfs - not available in CentOS Stream 9
+    vm_additional_pkgs: []
+
   tasks:
     - name: Disable firewalld for dev cluster
       systemd:
@@ -55,7 +58,7 @@
     kube_version: "v1.35"
     kubernetes_version: "1.35.0-0"
     enable_dra: true
-    kubeadm_advertise_address: "{{ ansible_host }}"
+    kubeadm_advertise_address: "{{ private_ip }}"
 
   roles:
     - kubeadm/kube_init            # Initialize Kubernetes cluster

@@ -33,7 +33,7 @@ done
 
 # Delete firewall rules
 echo "→ Deleting firewall rules..."
-for RULE in "${VPC_NAME}-allow-internal" "${VPC_NAME}-allow-ssh-control"; do
+for RULE in "${VPC_NAME}-allow-internal" "${VPC_NAME}-allow-ssh-control" "${VPC_NAME}-allow-ssh-workers"; do
     if gcloud compute firewall-rules describe "${RULE}" --quiet 2>/dev/null; then
         echo "  Deleting ${RULE}..."
         gcloud compute firewall-rules delete "${RULE}" --quiet
