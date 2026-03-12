@@ -7,11 +7,24 @@ Perfect for learning DRA or testing GPU resource allocation without actual hardw
 ## Architecture Overview
 
 This setup creates:
-- **2-node Kubernetes 1.35 cluster** (1 control plane + 1 worker)
+- **Kubernetes 1.35 cluster** (2 nodes for Vagrant, 3 nodes for GCP)
+  - 1 control plane node
+  - 1-2 worker nodes (depending on deployment method)
 - **CRI-O container runtime** (required for this DRA configuration)
 - **fake-gpu-operator** - Simulates NVIDIA H100 GPUs via canhazgpu service
 - **k8shazgpu** - DRA resource controller for GPU allocation
 - **Test workloads** - Sample pods demonstrating DRA GPU claims
+
+## Deployment Options
+
+### Local (Vagrant/libvirt)
+The default setup uses Vagrant and libvirt on a local virthost. See the Quick Start section below.
+
+### Google Cloud Platform (GCP)
+For cloud deployment, see [gcp/README.md](gcp/README.md). Uses gcloud CLI to provision:
+- 3 VMs (1 control plane + 2 workers) on CentOS Stream 9
+- VPC network with internal communication
+- SSH access to control plane from WAN
 
 ## Prerequisites
 

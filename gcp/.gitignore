@@ -1,0 +1,6 @@
+# Don't commit customized config
+config.sh.local
+
+# GCP credentials (if anyone stores them here)
+*.json
+credentials/
