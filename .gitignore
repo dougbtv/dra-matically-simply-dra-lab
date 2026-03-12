@@ -5,3 +5,7 @@ inventory/virthost.yml
 inventory/k8s-cluster.yml
 inventory/*.yml
 !inventory/*.example
+
+# User data files
+test.csv.zip
+users.csv
