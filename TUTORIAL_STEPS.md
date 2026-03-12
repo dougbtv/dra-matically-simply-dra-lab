@@ -58,14 +58,14 @@ You might run something long-lived.
 Example:
 
 ```
-screen -S chg
+tmux -S chg
 canhazgpu run -- sleep 100
 ```
 
 Detach from the session:
 
 ```
-Ctrl-a d
+Ctrl-b d
 ```
 
 Check status again:
@@ -309,7 +309,84 @@ Inspect node placement:
 kubectl get pods -o wide
 ```
 
-This shows how Kubernetes scheduled GPU workloads across the cluster.
+# Optional but, AWESOME steps.
+
+## Observe DRA Device Preparation
+
+Kubelet plugins prepare devices for pods. Check their logs:
+
+```bash
+# Find your pod...
+kubectl get pods -o wide
+
+# Find kubelet plugin pods
+kubectl get pods -n canhazgpu-system -l app=canhazgpu-kubeletplugin -o wide
+
+# Tail logs from the same node...
+kubectl logs -f -n canhazgpu-system canhazgpu-kubeletplugin-XXXXX
+```
+
+Look for:
+- `PrepareResourceClaims` calls from kubelet
+- CDI device ID construction
+- Device preparation success/failure
+
+## Step 12: Events and Troubleshooting
+
+Check events to see DRA in action:
+
+```bash
+# Watch all events
+kubectl get events -A --sort-by='.lastTimestamp' | tail -20
+
+# Events for a specific ResourceClaim
+kubectl describe resourceclaim demo
+
+# Events for the Pod
+kubectl describe pod demo-vllm-pod
+```
+
+Look for events like:
+- ResourceClaim allocation
+- Pod scheduling
+- Volume mounting
+- Container startup
+
+## Cleanup and Finalizers
+
+Observe cleanup behavior:
+
+```bash
+# Watch ResourceClaims during deletion
+kubectl get resourceclaims -w
+
+# In another terminal, delete a workload
+k8shazgpu cleanup --name demo
+
+# Check finalizers on the ResourceClaim before deletion
+kubectl get resourceclaim demo -o jsonpath='{.metadata.finalizers}'
+```
+
+The `canhazgpu.com/finalizer` ensures GPU deallocation happens before deletion completes.
+
+## Step 14: Direct API Inspection (Advanced)
+
+Use kubectl with custom columns to extract interesting DRA data:
+
+```bash
+# Custom columns for ResourceClaims
+kubectl get resourceclaims -o custom-columns=\
+NAME:.metadata.name,\
+ALLOCATED:.status.allocation.devices.results[0].device,\
+NODE:.status.allocation.nodeSelector.nodeSelectorTerms[0].matchExpressions[0].values[0]
+
+# Show all ResourceSlices with device counts
+kubectl get resourceslices -o custom-columns=\
+NAME:.metadata.name,\
+NODE:.spec.nodeName,\
+DRIVER:.spec.driver,\
+DEVICES:.spec.devices[*].name
+```
 
 ---
 

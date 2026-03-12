@@ -20,18 +20,22 @@ Signup for the lab [USING GOOGLE FORMS](https://docs.google.com/forms/d/e/1FAIpQ
 If you need it, you'll also have to setup [a GitHub public ssh key](https://docs.github.com/en/authentication/connecting-to-github-with-ssh/adding-a-new-ssh-key-to-your-github-account), or [generate an SSH key](https://docs.github.com/en/authentication/connecting-to-github-with-ssh/generating-a-new-ssh-key-and-adding-it-to-the-ssh-agent).
 
 
-Instructor note: Need to get to the form download?
+*Instructor note: Need to get to [the form download](https://docs.google.com/forms/d/1u2jlNmMOYWRWS9zgG9STOEVHClCFbJOzNL1elcaC9ZM/edit#responses)?*
 
 ### [Tutorial Steps](./TUTORIAL_STEPS.md)
 Follow the step-by-step tutorial to learn DRA concepts hands-on.
 
 ### DRA Driver Developement
 
-Part of this talk includes an example DRA Driver!
+We won't dig deeply into drive development -- but part of this talk includes an example DRA Driver!
 
 * https://github.com/dougbtv/canhazgpu/tree/k8shazgpu-demo-worthy
 
 It's on my fork of [canhazgpu](https://github.com/russellb/canhazgpu)
+
+We've prepared a [code walk-through markdown](./K8SHAZGPU_CODE_WALKTHROUGH.md) if you're interested in digging deeper.
+
+Also, one of your best friends during driver development is the [DRA example driver](https://github.com/kubernetes-sigs/dra-example-driver) from the kubernetes-sigs folks!
 
 ### [Infrastructure Setup](./infra/)
 
