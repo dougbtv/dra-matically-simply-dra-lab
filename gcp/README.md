@@ -87,13 +87,29 @@ ansible-playbook playbooks/03-deploy-demo-assets.yml -i inventory/gcp-k8s-cluste
 ansible-playbook playbooks/04-install-k8shazgpu.yml -i inventory/gcp-k8s-cluster.yml
 ```
 
-### 5. Teardown (cleanup)
+### 5. Stop VMs (save costs)
+
+```bash
+./stop-vms.sh
+```
+
+Stops all VMs to save compute costs (~$0.30/hour). Disk storage charges (~$6/month) continue.
+
+### 6. Start VMs
+
+```bash
+./start-vms.sh
+```
+
+Starts all stopped VMs. External IPs may change - regenerate inventory if needed.
+
+### 7. Teardown (full cleanup)
 
 ```bash
 ./teardown.sh
 ```
 
-Deletes all GCP resources (VMs, firewall rules, network).
+Deletes all GCP resources (VMs, firewall rules, network). **Permanent deletion!**
 
 ## SSH Access
 
@@ -110,11 +126,13 @@ Or let Ansible handle it with the generated inventory.
 ## Costs
 
 Approximate costs (europe-west4, on-demand):
-- **n2-standard-2**: ~$0.10/hour × 3 VMs = ~$0.30/hour (~$216/month)
-- **50GB pd-standard disk**: ~$0.04/GB/month × 50GB × 3 = ~$6/month
-- **External IP**: ~$0.005/hour × 3 = ~$0.015/hour (~$11/month)
+- **n2-standard-2**: ~$0.10/hour × 3 VMs = ~$0.30/hour (~$216/month if running 24/7)
+- **50GB pd-standard disk**: ~$0.04/GB/month × 50GB × 3 = ~$6/month (always charged)
+- **External IP**: ~$0.005/hour × 3 = ~$0.015/hour (~$11/month if running 24/7)
 
-**Total**: ~$233/month for 24/7, or **~$153 for 3 weeks**. Stop VMs when not in use!
+**Total**: ~$233/month if running 24/7, or **~$153 for 3 weeks**.
+
+**💰 Save money**: Use `./stop-vms.sh` when not using the lab! Stopped VMs only cost ~$6/month for disk storage.
 
 ## Switching Between Configs
 
@@ -153,5 +171,8 @@ The scripts automatically switch to `dra-workshop` when running.
 - `setup-network.sh` - Create VPC and firewall rules
 - `create-vms.sh` - Launch 3 VMs
 - `generate-inventory.sh` - Generate Ansible inventory
+- `stop-vms.sh` - Stop VMs to save costs
+- `start-vms.sh` - Start stopped VMs
 - `teardown.sh` - Delete all resources
+- `deploy-all.sh` - One-shot: network + VMs + inventory
 - `README.md` - This file
