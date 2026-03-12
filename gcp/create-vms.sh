@@ -56,7 +56,7 @@ else
         --metadata=startup-script="${STARTUP_SCRIPT}"
 fi
 
-# Create worker VMs (no external IP - internal only)
+# Create worker VMs (with external IPs)
 for WORKER_VM in "${WORKER_1_VM}" "${WORKER_2_VM}"; do
     echo "→ Creating worker VM: ${WORKER_VM}"
     if gcloud compute instances describe "${WORKER_VM}" --zone="${GCP_ZONE}" --quiet 2>/dev/null; then
@@ -66,7 +66,7 @@ for WORKER_VM in "${WORKER_1_VM}" "${WORKER_2_VM}"; do
             --zone="${GCP_ZONE}" \
             --machine-type="${VM_MACHINE_TYPE}" \
             --subnet="${SUBNET_NAME}" \
-            --no-address \
+            --network-tier=PREMIUM \
             --maintenance-policy=MIGRATE \
             --image-project="${VM_IMAGE_PROJECT}" \
             --image-family="${VM_IMAGE_FAMILY}" \

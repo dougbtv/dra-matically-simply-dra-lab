@@ -6,12 +6,12 @@ This directory contains gcloud CLI scripts to deploy the DRA lab's 3-VM Kubernet
 
 - **VPC Network**: `dra-lab-vpc` with custom subnet `10.240.0.0/24`
 - **3 VMs**:
-  - **Control plane**: CentOS Stream 9, 2 vCPUs, 8GB RAM, external IP (SSH from WAN)
-  - **Worker 1**: CentOS Stream 9, 2 vCPUs, 8GB RAM, internal IP only
-  - **Worker 2**: CentOS Stream 9, 2 vCPUs, 8GB RAM, internal IP only
+  - **Control plane**: CentOS Stream 9, 2 vCPUs, 8GB RAM, 50GB disk, external IP (SSH from WAN)
+  - **Worker 1**: CentOS Stream 9, 2 vCPUs, 8GB RAM, 50GB disk, external IP
+  - **Worker 2**: CentOS Stream 9, 2 vCPUs, 8GB RAM, 50GB disk, external IP
 - **Firewall**:
   - Internal traffic (TCP/UDP/ICMP) between all VMs
-  - SSH (port 22) from anywhere to control plane
+  - SSH (port 22) from anywhere to all VMs
 
 ## Prerequisites
 
@@ -97,26 +97,24 @@ Deletes all GCP resources (VMs, firewall rules, network).
 
 ## SSH Access
 
-**Control plane** (direct from your workstation):
+All VMs have external IPs and can be accessed directly:
+
 ```bash
 ssh dev@<control-plane-external-ip>
-```
-
-**Workers** (via ProxyJump through control plane):
-```bash
-ssh -J dev@<control-plane-external-ip> dev@<worker-internal-ip>
+ssh dev@<worker1-external-ip>
+ssh dev@<worker2-external-ip>
 ```
 
 Or let Ansible handle it with the generated inventory.
 
 ## Costs
 
-Approximate costs (us-central1, on-demand):
-- **n2-standard-2**: ~$0.10/hour × 3 VMs = ~$0.30/hour
-- **20GB disk**: ~$0.04/month × 3 = ~$0.12/month
-- **External IP**: ~$0.005/hour
+Approximate costs (europe-west4, on-demand):
+- **n2-standard-2**: ~$0.10/hour × 3 VMs = ~$0.30/hour (~$216/month)
+- **50GB pd-standard disk**: ~$0.04/GB/month × 50GB × 3 = ~$6/month
+- **External IP**: ~$0.005/hour × 3 = ~$0.015/hour (~$11/month)
 
-**Total**: ~$7-8/day if running 24/7. Stop VMs when not in use!
+**Total**: ~$233/month for 24/7, or **~$153 for 3 weeks**. Stop VMs when not in use!
 
 ## Switching Between Configs
 
@@ -136,10 +134,10 @@ The scripts automatically switch to `dra-workshop` when running.
 - Ensure Compute Engine API is enabled
 - Check IAM permissions (need `compute.instanceAdmin` or similar)
 
-**Can't SSH to workers**:
-- Workers have no external IP by design
-- Use ProxyJump: `ssh -J dev@<control-ip> dev@<worker-ip>`
-- Or use the generated Ansible inventory
+**Can't SSH to VMs**:
+- Ensure your firewall allows SSH (port 22) from your IP
+- Check that the `dev` user was created via startup script
+- Verify your SSH key is in `/home/dev/.ssh/authorized_keys`
 
 **VMs won't start**:
 - Check quotas: `gcloud compute project-info describe --project=YOUR_PROJECT`

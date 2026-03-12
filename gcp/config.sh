@@ -18,7 +18,7 @@ export VM_PREFIX="dra-lab"
 export VM_IMAGE_PROJECT="centos-cloud"
 export VM_IMAGE_FAMILY="centos-stream-9"
 export VM_MACHINE_TYPE="n2-standard-2"  # 2 vCPUs, 8GB RAM (closest to your 4GB setup)
-export VM_BOOT_DISK_SIZE="20GB"
+export VM_BOOT_DISK_SIZE="50GB"
 
 # VM Names
 export CONTROL_PLANE_VM="${VM_PREFIX}-control"
