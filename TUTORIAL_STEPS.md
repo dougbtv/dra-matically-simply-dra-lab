@@ -252,10 +252,16 @@ buy more ovaltine!
 Run the job again:
 
 ```
-k8shazgpu vllm run --follow --name vllm-demo -- vllm serve
+k8shazgpu vllm run --follow --name $(whoami)-vllm-demo -- vllm serve
 ```
 
 You should now see your new output.
+
+When you're done! ...you can clean it up, but, I'd wait until you're done
+
+```
+k8shazgpu cleanup --name $(whoami)-vllm-demo
+```
 
 ---
 
