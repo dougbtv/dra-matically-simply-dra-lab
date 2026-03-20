@@ -1,5 +1,9 @@
 references/
 
+# Environment files with secrets
+.env
+infra/.env
+
 # User-specific inventory files (keep .example files)
 inventory/virthost.yml
 inventory/k8s-cluster.yml

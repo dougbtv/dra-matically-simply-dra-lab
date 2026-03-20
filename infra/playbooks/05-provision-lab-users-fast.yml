@@ -1,0 +1,44 @@
+---
+- name: Fast provision lab users from CSV
+  hosts: k8s_control_plane
+  become: true
+  vars:
+    csv_file: "{{ playbook_dir }}/../users.csv"
+    kubeconfig_source: "/home/dev/.kube/admin.conf"
+    provision_script: "/tmp/provision-users.sh"
+
+  tasks:
+    - name: Generate provisioning script locally
+      ansible.builtin.command:
+        cmd: "{{ playbook_dir }}/../scripts/generate-provision-script.py {{ csv_file }} {{ provision_script }}"
+      delegate_to: localhost
+      become: false
+      changed_when: true
+
+    - name: Upload provisioning script to remote host
+      ansible.builtin.copy:
+        src: "{{ provision_script }}"
+        dest: /tmp/provision-users.sh
+        mode: '0755'
+
+    - name: Run provisioning script
+      ansible.builtin.command:
+        cmd: /tmp/provision-users.sh
+      register: provision_output
+      changed_when: true
+
+    - name: Display provisioning output
+      ansible.builtin.debug:
+        var: provision_output.stdout_lines
+
+    - name: Clean up provisioning script
+      ansible.builtin.file:
+        path: /tmp/provision-users.sh
+        state: absent
+
+    - name: Clean up local provisioning script
+      ansible.builtin.file:
+        path: "{{ provision_script }}"
+        state: absent
+      delegate_to: localhost
+      become: false
