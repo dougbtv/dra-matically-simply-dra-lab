@@ -35,8 +35,9 @@
       ansible.builtin.shell:
         cmd: |
           cd /tmp/user-provisioning
-          source .env
+          . ./.env
           ./scripts/generate-provision-script.py users.csv provision-users.sh
+        executable: /bin/bash
       changed_when: true
 
     - name: Run provisioning script on remote
