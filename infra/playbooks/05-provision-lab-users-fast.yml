@@ -1,29 +1,47 @@
 ---
-- name: Fast provision lab users from CSV
+- name: Fast provision lab users from CSV (remote-side key fetch)
   hosts: k8s_control_plane
   become: true
   vars:
     csv_file: "{{ playbook_dir }}/../users.csv"
     kubeconfig_source: "/home/dev/.kube/admin.conf"
-    provision_script: "/tmp/provision-users.sh"
 
   tasks:
-    - name: Generate provisioning script locally
-      ansible.builtin.command:
-        cmd: "{{ playbook_dir }}/../scripts/generate-provision-script.py {{ csv_file }} {{ provision_script }}"
-      delegate_to: localhost
-      become: false
-      changed_when: true
-
-    - name: Upload provisioning script to remote host
-      ansible.builtin.copy:
-        src: "{{ provision_script }}"
-        dest: /tmp/provision-users.sh
+    - name: Create temporary directory on remote
+      ansible.builtin.file:
+        path: /tmp/user-provisioning
+        state: directory
         mode: '0755'
 
-    - name: Run provisioning script
+    - name: Upload users CSV to remote
+      ansible.builtin.copy:
+        src: "{{ csv_file }}"
+        dest: /tmp/user-provisioning/users.csv
+        mode: '0644'
+
+    - name: Upload provisioning scripts to remote
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../scripts/"
+        dest: /tmp/user-provisioning/scripts/
+        mode: preserve
+
+    - name: Upload GitHub PAT .env file to remote
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../.env"
+        dest: /tmp/user-provisioning/.env
+        mode: '0600'
+
+    - name: Generate provisioning script on remote
+      ansible.builtin.shell:
+        cmd: |
+          cd /tmp/user-provisioning
+          source .env
+          ./scripts/generate-provision-script.py users.csv provision-users.sh
+      changed_when: true
+
+    - name: Run provisioning script on remote
       ansible.builtin.command:
-        cmd: /tmp/provision-users.sh
+        cmd: /tmp/user-provisioning/provision-users.sh
       register: provision_output
       changed_when: true
 
@@ -31,14 +49,7 @@
       ansible.builtin.debug:
         var: provision_output.stdout_lines
 
-    - name: Clean up provisioning script
+    - name: Clean up temporary directory
       ansible.builtin.file:
-        path: /tmp/provision-users.sh
+        path: /tmp/user-provisioning
         state: absent
-
-    - name: Clean up local provisioning script
-      ansible.builtin.file:
-        path: "{{ provision_script }}"
-        state: absent
-      delegate_to: localhost
-      become: false
