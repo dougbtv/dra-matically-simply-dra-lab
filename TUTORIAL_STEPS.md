@@ -19,7 +19,7 @@ After completing the **Google Form signup**, you will receive a shell account.
 SSH into the workshop host:
 
 ```
-ssh <your-github-username>@OUR.TBD.IP.ADDRESS
+ssh <your-github-username>@dralab.dougbtv.com
 ```
 
 Example:
