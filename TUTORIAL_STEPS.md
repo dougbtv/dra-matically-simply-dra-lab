@@ -25,7 +25,7 @@ ssh <your-github-username>@dralab.dougbtv.com
 Example:
 
 ```
-ssh dougsmith@OUR.TBD.IP.ADDRESS
+ssh dougsmith@dralab.dougbtv.com
 ```
 
 Once logged in you will have:
