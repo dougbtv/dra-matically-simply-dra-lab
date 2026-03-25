@@ -163,7 +163,7 @@ For example, change the message to something fun.
 Launch the workload:
 
 ```
-k8shazgpu vllm run --follow --name vllm-demo -- vllm serve
+k8shazgpu vllm run --follow --name $(whoami)-vllm-demo -- vllm serve
 ```
 
 This command will:
@@ -198,7 +198,7 @@ Notice where workloads are running.
 In another terminal you can inspect logs manually:
 
 ```
-kubectl logs -f vllm-demo-vllm-pod -n default
+kubectl logs -f $(whoami)-vllm-demo-vllm-pod -n default
 ```
 
 ---
@@ -216,7 +216,7 @@ kubectl get resourceclaims -A
 Inspect the claim created for your job:
 
 ```
-kubectl describe resourceclaims vllm-demo
+kubectl describe resourceclaims $(whoami)-vllm-demo
 ```
 
 This shows how Kubernetes allocated the GPUs.
@@ -228,7 +228,7 @@ This shows how Kubernetes allocated the GPUs.
 When you're done:
 
 ```
-k8shazgpu cleanup --name vllm-demo
+k8shazgpu cleanup --name $(whoami)-vllm-demo
 ```
 
 Check GPU usage:
