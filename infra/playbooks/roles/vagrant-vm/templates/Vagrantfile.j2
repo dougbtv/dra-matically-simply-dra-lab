@@ -7,9 +7,10 @@ Vagrant.configure("2") do |config|
     libvirt.memory = {{ vm_ram }}
     libvirt.cpus = {{ vm_vcpus }}
     libvirt.default_prefix = "{{ vm_name }}"
+    libvirt.storage_pool_name = "{{ vm_storage_pool }}"
 
-    # Attach a small secondary disk for testing
-    libvirt.storage :file, :size => '5G', :type => 'qcow2', :bus => 'virtio'
+    # Secondary disk (thin provisioned)
+    libvirt.storage :file, :size => '{{ vm_secondary_disk_size }}', :type => 'qcow2', :bus => 'virtio', :pool => '{{ vm_storage_pool }}'
 
     {% if gpu_passthru and gpu_pci_bdfs %}
     # GPU passthrough (all functions)

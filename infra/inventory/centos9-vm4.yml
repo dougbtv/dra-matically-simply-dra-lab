@@ -1,0 +1,6 @@
+all:
+  hosts:
+    centos9-vm4:
+      ansible_host: 192.168.50.193
+      ansible_user: dev
+      ansible_become: true

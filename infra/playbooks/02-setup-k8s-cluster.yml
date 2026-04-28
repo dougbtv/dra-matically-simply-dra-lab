@@ -126,11 +126,9 @@
       retries: 30
       delay: 10
 
-    - name: Remove control-plane taint to allow workload scheduling
-      shell: kubectl taint nodes --all node-role.kubernetes.io/control-plane:NoSchedule-
-      environment:
-        KUBECONFIG: "/home/{{ ansible_user }}/.kube/admin.conf"
-      ignore_errors: true
+    # Control-plane taint is intentionally kept — workloads should
+    # schedule on worker nodes only.
+    # To remove it manually: kubectl taint nodes centos9-vm1 node-role.kubernetes.io/control-plane:NoSchedule-
 
 # Fourth play: Join worker nodes to cluster
 - name: Join worker nodes to cluster

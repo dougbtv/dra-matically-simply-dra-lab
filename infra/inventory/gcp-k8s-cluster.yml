@@ -1,0 +1,31 @@
+---
+# Auto-generated inventory for GCP DRA lab VMs
+# Generated: 2026-03-12 17:12:28 UTC
+
+all:
+  vars:
+    ansible_user: dev
+    ansible_ssh_private_key_file: /home/doug/.ssh/id_rsa
+    ansible_python_interpreter: /usr/bin/python3
+
+  children:
+    k8s_control_plane:
+      hosts:
+        dra-lab-control:
+          ansible_host: 34.12.198.87
+          private_ip: 10.240.0.2
+
+    k8s_workers:
+      hosts:
+        dra-lab-worker1:
+          ansible_host: 34.6.109.69
+          private_ip: 10.240.0.3
+
+        dra-lab-worker2:
+          ansible_host: 34.147.58.58
+          private_ip: 10.240.0.4
+
+    k8s_cluster:
+      children:
+        k8s_control_plane:
+        k8s_workers:

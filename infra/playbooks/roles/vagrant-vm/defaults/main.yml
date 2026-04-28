@@ -1,3 +1,5 @@
 remote_vagrant_dir: "/opt/vagrant-vms/{{ vm_name }}"
 gpu_passthru: false
 gpu_pci_bdfs: []
+vm_storage_pool: "default"
+vm_secondary_disk_size: "5G"

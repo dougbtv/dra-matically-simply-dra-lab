@@ -1,5 +1,5 @@
 ---
-# Playbook to create two CentOS 9 Stream VMs on your virthost
+# Playbook to create CentOS 9 Stream VMs on your virthost
 #
 # Prerequisites:
 #   - Configure inventory/virthost.yml with your virthost details
@@ -9,7 +9,7 @@
 #
 # This playbook will:
 #   - Install Vagrant, libvirt, and KVM on your virthost
-#   - Create 2 CentOS Stream 9 VMs with bridged networking
+#   - Create CentOS Stream 9 VMs with bridged networking
 #   - Generate inventory/k8s-cluster.yml for subsequent playbooks
 #
 
@@ -27,13 +27,31 @@
         network_mode: "bridged"
         bridge_device: "br0"
         ansible_role: "centos9-vm1"
+        storage_pool: "nvme-pool"
       - name: centos9-vm2
         image: "generic/centos9s"
-        ram: 4096
-        vcpus: 2
+        ram: 8192
+        vcpus: 4
         network_mode: "bridged"
         bridge_device: "br0"
         ansible_role: "centos9-vm2"
+        storage_pool: "nvme-pool"
+      - name: centos9-vm3
+        image: "generic/centos9s"
+        ram: 8192
+        vcpus: 4
+        network_mode: "bridged"
+        bridge_device: "br0"
+        ansible_role: "centos9-vm3"
+        storage_pool: "nvme-pool"
+      - name: centos9-vm4
+        image: "generic/centos9s"
+        ram: 8192
+        vcpus: 4
+        network_mode: "bridged"
+        bridge_device: "br0"
+        ansible_role: "centos9-vm4"
+        storage_pool: "nvme-pool"
 
   tasks:
     - name: Install required packages
@@ -64,6 +82,7 @@
             vm_network_mode: "{{ vm_item.network_mode }}"
             vm_bridge_device: "{{ vm_item.bridge_device }}"
             vm_ansible_role: "{{ vm_item.ansible_role }}"
+            vm_storage_pool: "{{ vm_item.storage_pool | default('default') }}"
       loop: "{{ vms }}"
       loop_control:
         loop_var: vm_item
@@ -74,12 +93,11 @@
         msg: |
           VMs created successfully!
 
-          VM 1: centos9-vm1
-            - Inventory: inventory/centos9-vm1.yml
-
-          VM 2: centos9-vm2
-            - Inventory: inventory/centos9-vm2.yml
-
-          You can now SSH to these VMs using the generated inventory files.
+          {% for vm in vms %}
+          {{ vm.name }}:
+            - Inventory: inventory/{{ vm.name }}.yml
+            - Pool: {{ vm.storage_pool | default('default') }}
+            - Specs: {{ vm.vcpus }} vCPU / {{ vm.ram }}MB RAM
+          {% endfor %}
 
           Next step: Run playbooks/02-setup-k8s-cluster.yml
