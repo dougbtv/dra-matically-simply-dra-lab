@@ -1,0 +1,376 @@
+---
+# Playbook to migrate CNI from Flannel to Cilium on an existing kubeadm cluster
+#
+# Prerequisites:
+#   - Cluster built via 02-setup-k8s-cluster.yml with Flannel CNI
+#   - All nodes healthy and Ready
+#   - Helm installed on control plane (via kubernetes_tools role)
+#
+# Usage:
+#   ansible-playbook -i inventory/k8s-cluster.yml playbooks/06-migrate-flannel-to-cilium.yml
+#
+# This playbook will:
+#   - Remove Flannel CNI and clean up all artifacts
+#   - Install Cilium CNI via Helm with Hubble observability
+#   - Restart all workloads to pick up Cilium networking
+#   - Verify cluster health post-migration
+#
+# NOTE: This causes cluster-wide networking downtime during migration.
+
+# --- Play 1: Pre-flight checks ---
+- name: Pre-flight checks
+  hosts: k8s_control_plane
+  become: false
+  vars:
+    kubeconfig: "/home/{{ ansible_user }}/.kube/admin.conf"
+
+  tasks:
+    - name: Check all nodes are Ready
+      shell: kubectl get nodes --no-headers | grep -c 'NotReady' || true
+      environment:
+        KUBECONFIG: "{{ kubeconfig }}"
+      register: not_ready_count
+      changed_when: false
+
+    - name: Fail if any nodes are NotReady
+      fail:
+        msg: "{{ not_ready_count.stdout }} node(s) are NotReady. Fix cluster health before migrating CNI."
+      when: not_ready_count.stdout | int > 0
+
+    - name: Check if flannel is running
+      shell: kubectl get pods -n kube-flannel -l app=flannel --no-headers 2>/dev/null | grep -c Running || echo "0"
+      environment:
+        KUBECONFIG: "{{ kubeconfig }}"
+      register: flannel_pod_count
+      changed_when: false
+
+    - name: Check if Cilium is already installed
+      shell: kubectl get ds -n kube-system cilium --no-headers 2>/dev/null | wc -l
+      environment:
+        KUBECONFIG: "{{ kubeconfig }}"
+      register: cilium_installed
+      changed_when: false
+
+    - name: Fail if neither flannel nor cilium is running
+      fail:
+        msg: "No CNI found — neither Flannel nor Cilium is running. Cluster may be in a broken state."
+      when: flannel_pod_count.stdout | int == 0 and cilium_installed.stdout | trim | int == 0
+
+    - name: Set migration needed flag
+      set_fact:
+        flannel_present: "{{ flannel_pod_count.stdout | int > 0 }}"
+
+    - name: Record current node status
+      shell: kubectl get nodes -o wide
+      environment:
+        KUBECONFIG: "{{ kubeconfig }}"
+      register: pre_nodes
+      changed_when: false
+
+    - name: Display pre-flight summary
+      debug:
+        msg: |
+          Pre-flight OK:
+          {% if flannel_present | bool %}
+            Flannel pods running: {{ flannel_pod_count.stdout }}
+            Starting Flannel -> Cilium migration. Networking downtime begins now.
+          {% else %}
+            Cilium already installed — re-running for idempotency.
+          {% endif %}
+            Nodes:
+          {{ pre_nodes.stdout }}
+
+# --- Play 2: Remove Flannel from Kubernetes ---
+- name: Remove Flannel from Kubernetes
+  hosts: k8s_control_plane
+  become: false
+  vars:
+    kubeconfig: "/home/{{ ansible_user }}/.kube/admin.conf"
+
+  tasks:
+    - name: Delete Flannel resources
+      shell: kubectl delete -f https://github.com/flannel-io/flannel/releases/latest/download/kube-flannel.yml --ignore-not-found=true
+      environment:
+        KUBECONFIG: "{{ kubeconfig }}"
+
+    - name: Wait for kube-flannel namespace to be removed
+      shell: kubectl get namespace kube-flannel --no-headers 2>&1
+      environment:
+        KUBECONFIG: "{{ kubeconfig }}"
+      register: flannel_ns
+      until: "'not found' in flannel_ns.stderr or 'not found' in flannel_ns.stdout or flannel_ns.rc != 0"
+      retries: 30
+      delay: 5
+      failed_when: false
+      changed_when: false
+
+# --- Play 3: Clean up Flannel artifacts on ALL nodes ---
+- name: Clean up Flannel artifacts on all nodes
+  hosts: k8s_cluster
+  become: true
+
+  tasks:
+    - name: Remove flannel CNI config
+      file:
+        path: /etc/cni/net.d/10-flannel.conflist
+        state: absent
+
+    - name: Remove any other flannel CNI files
+      shell: rm -f /etc/cni/net.d/*flannel*
+      args:
+        removes: /etc/cni/net.d/
+
+    - name: Delete flannel.1 VXLAN interface
+      shell: ip link delete flannel.1
+      ignore_errors: true
+
+    - name: Delete cni0 bridge interface
+      shell: ip link delete cni0
+      ignore_errors: true
+
+    - name: Flush iptables NAT table
+      shell: iptables -F -t nat
+      ignore_errors: true
+
+    - name: Flush iptables filter table
+      shell: iptables -F -t filter
+      ignore_errors: true
+
+    - name: Remove flannel state directory
+      file:
+        path: /var/run/flannel
+        state: absent
+
+    - name: Remove flannel CNI binary
+      file:
+        path: /opt/cni/bin/flannel
+        state: absent
+
+    - name: Restart CRI-O to clear stale CNI config
+      systemd:
+        name: crio
+        state: restarted
+
+    - name: Restart kubelet
+      systemd:
+        name: kubelet
+        state: restarted
+
+# --- Play 4: Install Cilium via Helm ---
+- name: Install Cilium via Helm
+  hosts: k8s_control_plane
+  become: false
+  vars:
+    kubeconfig: "/home/{{ ansible_user }}/.kube/admin.conf"
+    cilium_version: "1.17.12"
+
+  tasks:
+    - name: Add Cilium Helm repository
+      shell: helm repo add cilium https://helm.cilium.io/ --force-update
+      environment:
+        KUBECONFIG: "{{ kubeconfig }}"
+        PATH: "/usr/local/bin:/usr/bin:/bin"
+
+    - name: Update Cilium Helm repository
+      shell: helm repo update cilium
+      environment:
+        KUBECONFIG: "{{ kubeconfig }}"
+        PATH: "/usr/local/bin:/usr/bin:/bin"
+
+    - name: Install Cilium
+      shell: >-
+        helm upgrade --install cilium cilium/cilium
+        --version {{ cilium_version }}
+        --namespace kube-system
+        --set ipam.operator.clusterPoolIPv4PodCIDRList=10.244.0.0/16
+        --set tunnelProtocol=vxlan
+        --set routingMode=tunnel
+        --set kubeProxyReplacement=false
+        --set hubble.enabled=true
+        --set hubble.relay.enabled=true
+        --set hubble.ui.enabled=true
+        --set operator.replicas=1
+        --wait
+        --timeout 5m0s
+      environment:
+        KUBECONFIG: "{{ kubeconfig }}"
+        PATH: "/usr/local/bin:/usr/bin:/bin"
+
+# --- Play 5: Wait for Cilium to be fully operational ---
+- name: Wait for Cilium to be ready
+  hosts: k8s_control_plane
+  become: false
+  vars:
+    kubeconfig: "/home/{{ ansible_user }}/.kube/admin.conf"
+
+  tasks:
+    - name: Wait for Cilium agent pods
+      shell: kubectl -n kube-system wait --for=condition=Ready pod -l k8s-app=cilium --timeout=300s
+      environment:
+        KUBECONFIG: "{{ kubeconfig }}"
+
+    - name: Wait for Cilium operator
+      shell: kubectl -n kube-system wait --for=condition=Ready pod -l name=cilium-operator --timeout=120s
+      environment:
+        KUBECONFIG: "{{ kubeconfig }}"
+
+    - name: Wait for all nodes to be Ready
+      shell: kubectl get nodes --no-headers | grep -v Ready | wc -l
+      environment:
+        KUBECONFIG: "{{ kubeconfig }}"
+      register: not_ready_nodes
+      until: not_ready_nodes.stdout | trim == "0"
+      retries: 60
+      delay: 10
+      changed_when: false
+
+# --- Play 6a: Restart CRI-O and kubelet on all nodes ---
+- name: Restart node services for Cilium CNI
+  hosts: k8s_cluster
+  become: true
+
+  tasks:
+    - name: Restart CRI-O to pick up Cilium CNI config
+      systemd:
+        name: crio
+        state: restarted
+
+    - name: Restart kubelet
+      systemd:
+        name: kubelet
+        state: restarted
+
+    - name: Pause for services to stabilize
+      pause:
+        seconds: 15
+
+# --- Play 6b: Restart workloads ---
+- name: Restart workloads with Cilium networking
+  hosts: k8s_control_plane
+  become: false
+  vars:
+    kubeconfig: "/home/{{ ansible_user }}/.kube/admin.conf"
+
+  tasks:
+    - name: Restart CoreDNS
+      shell: kubectl -n kube-system rollout restart deployment coredns
+      environment:
+        KUBECONFIG: "{{ kubeconfig }}"
+
+    - name: Wait for CoreDNS to be ready
+      shell: kubectl -n kube-system rollout status deployment coredns --timeout=120s
+      environment:
+        KUBECONFIG: "{{ kubeconfig }}"
+
+    - name: Get non-system namespaces
+      shell: >-
+        kubectl get namespaces -o jsonpath='{.items[*].metadata.name}' |
+        tr ' ' '\n' |
+        grep -v -E '^(kube-system|kube-public|kube-node-lease|kube-flannel)$'
+      environment:
+        KUBECONFIG: "{{ kubeconfig }}"
+      register: workload_namespaces
+      changed_when: false
+
+    - name: Restart pods in workload namespaces
+      shell: kubectl delete pods --all -n {{ item }} --grace-period=30
+      environment:
+        KUBECONFIG: "{{ kubeconfig }}"
+      loop: "{{ workload_namespaces.stdout_lines }}"
+      ignore_errors: true
+
+    - name: Wait for workload pods to stabilize
+      shell: >-
+        kubectl get pods -A --no-headers --field-selector=status.phase!=Succeeded |
+        grep -v -E 'Running|Completed' | wc -l
+      environment:
+        KUBECONFIG: "{{ kubeconfig }}"
+      register: unstable_pods
+      until: unstable_pods.stdout | trim == "0"
+      retries: 60
+      delay: 10
+      changed_when: false
+      ignore_errors: true
+
+# --- Play 7: Final verification ---
+- name: Verify migration
+  hosts: k8s_control_plane
+  become: false
+  vars:
+    kubeconfig: "/home/{{ ansible_user }}/.kube/admin.conf"
+    cilium_version: "1.17.12"
+
+  tasks:
+    - name: Get node status
+      shell: kubectl get nodes -o wide
+      environment:
+        KUBECONFIG: "{{ kubeconfig }}"
+      register: post_nodes
+      changed_when: false
+
+    - name: Get pod status
+      shell: kubectl get pods -A -o wide
+      environment:
+        KUBECONFIG: "{{ kubeconfig }}"
+      register: post_pods
+      changed_when: false
+
+    - name: Get Cilium status
+      shell: >-
+        kubectl -n kube-system exec ds/cilium -c cilium-agent --
+        cilium status --brief 2>/dev/null || echo "cilium status unavailable"
+      environment:
+        KUBECONFIG: "{{ kubeconfig }}"
+      register: cilium_status
+      changed_when: false
+      ignore_errors: true
+
+    - name: Get Hubble status
+      shell: kubectl get pods -n kube-system -l k8s-app=hubble-relay --no-headers
+      environment:
+        KUBECONFIG: "{{ kubeconfig }}"
+      register: hubble_status
+      changed_when: false
+      ignore_errors: true
+
+    - name: DNS smoke test
+      shell: >-
+        kubectl run dns-test --image=busybox:1.36 --restart=Never --rm -i
+        --timeout=30s -- nslookup kubernetes.default.svc.cluster.local
+      environment:
+        KUBECONFIG: "{{ kubeconfig }}"
+      register: dns_test
+      changed_when: false
+      ignore_errors: true
+
+    - name: Display migration summary
+      debug:
+        msg: |
+          ============================================
+          Flannel -> Cilium Migration Complete!
+          ============================================
+
+          Node Status:
+          {{ post_nodes.stdout }}
+
+          Cilium Status:
+          {{ cilium_status.stdout | default('unavailable') }}
+
+          Hubble:
+          {{ hubble_status.stdout | default('unavailable') }}
+
+          DNS Test:
+          {{ dns_test.stdout | default('failed — check manually') }}
+
+          Configuration:
+            CNI: Cilium {{ cilium_version }}
+            Tunnel Mode: VXLAN
+            Pod CIDR: 10.244.0.0/16 (unchanged)
+            Service CIDR: 10.96.0.0/12 (unchanged)
+            kube-proxy: kept (iptables mode)
+            Hubble: enabled (UI + Relay)
+
+          Next steps:
+            - Access Hubble UI: kubectl port-forward -n kube-system svc/hubble-ui 12000:80
+            - Run connectivity test: cilium connectivity test (install CLI first)
+            - (Optional) Replace kube-proxy with Cilium eBPF: set kubeProxyReplacement=true
