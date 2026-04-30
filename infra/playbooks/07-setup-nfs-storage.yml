@@ -1,0 +1,243 @@
+---
+# Playbook to set up NFS-backed dynamic PVC provisioning
+#
+# Prerequisites:
+#   - Kubernetes cluster running (via 02-setup-k8s-cluster.yml)
+#   - Helm installed on control plane (via 02-setup-k8s-cluster.yml)
+#   - NFS server reachable from all cluster nodes
+#
+# Usage:
+#   ansible-playbook -i inventory/k8s-cluster.yml playbooks/07-setup-nfs-storage.yml
+#
+# This playbook will:
+#   - Install NFS client packages on all cluster nodes
+#   - Verify NFS server connectivity and r/w access
+#   - Deploy the NFS Subdir External Provisioner via Helm
+#   - Set nfs-client as the default StorageClass
+#   - Run a smoke test to verify dynamic provisioning works
+#
+
+# First play: Install NFS client packages on all nodes
+- name: Install NFS client packages
+  hosts: k8s_cluster
+  become: true
+
+  tasks:
+    - name: Install nfs-utils
+      package:
+        name: nfs-utils
+        state: present
+
+    - name: Ensure rpcbind is running
+      systemd:
+        name: rpcbind
+        state: started
+        enabled: true
+
+# Second play: Verify NFS connectivity from all nodes
+- name: Verify NFS connectivity
+  hosts: k8s_cluster
+  become: true
+
+  vars:
+    nfs_server: "192.168.50.82"
+    nfs_path: "/volume1/kubernetes-nfs"
+
+  tasks:
+    - name: Check NFS export is visible
+      shell: showmount -e {{ nfs_server }}
+      register: showmount_result
+      retries: 3
+      delay: 5
+
+    - name: Display available NFS exports
+      debug:
+        msg: "{{ showmount_result.stdout_lines }}"
+
+    - name: Test mount NFS share
+      mount:
+        src: "{{ nfs_server }}:{{ nfs_path }}"
+        path: /mnt/nfs-test
+        fstype: nfs
+        state: mounted
+
+    - name: Test write access
+      shell: touch /mnt/nfs-test/.ansible-nfs-test-{{ inventory_hostname }} && rm -f /mnt/nfs-test/.ansible-nfs-test-{{ inventory_hostname }}
+
+    - name: Unmount test mount
+      mount:
+        path: /mnt/nfs-test
+        state: absent
+
+# Third play: Deploy NFS provisioner and configure StorageClass
+- name: Deploy NFS Subdir External Provisioner
+  hosts: k8s_control_plane
+  become: false
+
+  vars:
+    kubeconfig: "/home/{{ ansible_user }}/.kube/admin.conf"
+    nfs_server: "192.168.50.82"
+    nfs_path: "/volume1/kubernetes-nfs"
+    nfs_provisioner_namespace: nfs-provisioner
+
+  environment:
+    KUBECONFIG: "{{ kubeconfig }}"
+    PATH: "/usr/local/bin:/usr/bin:/bin"
+
+  tasks:
+    - name: Add NFS provisioner Helm repo
+      shell: helm repo add nfs-subdir-external-provisioner https://kubernetes-sigs.github.io/nfs-subdir-external-provisioner/
+      register: repo_add
+      changed_when: "'has been added' in repo_add.stdout"
+      failed_when: false
+
+    - name: Update Helm repos
+      shell: helm repo update
+
+    - name: Install NFS Subdir External Provisioner
+      shell: >-
+        helm upgrade -i nfs-subdir-external-provisioner
+        nfs-subdir-external-provisioner/nfs-subdir-external-provisioner
+        --namespace {{ nfs_provisioner_namespace }}
+        --create-namespace
+        --set nfs.server={{ nfs_server }}
+        --set nfs.path={{ nfs_path }}
+        --set storageClass.name=nfs-client
+        --set storageClass.defaultClass=true
+        --set storageClass.reclaimPolicy=Retain
+        --set storageClass.archiveOnDelete=true
+      register: helm_install_result
+
+    - name: Display Helm install result
+      debug:
+        msg: "{{ helm_install_result.stdout_lines }}"
+
+    - name: Wait for NFS provisioner pod to be ready
+      shell: kubectl wait --for=condition=Ready pod -n {{ nfs_provisioner_namespace }} --all --timeout=120s
+      register: pods_ready
+
+    - name: Display provisioner pod status
+      shell: kubectl get pods -n {{ nfs_provisioner_namespace }}
+      register: provisioner_pods
+
+    - name: Show provisioner pods
+      debug:
+        msg: "{{ provisioner_pods.stdout_lines }}"
+
+    - name: Demote local-path from default StorageClass
+      shell: >-
+        kubectl patch storageclass local-path
+        -p '{"metadata": {"annotations": {"storageclass.kubernetes.io/is-default-class": "false", "storageclass.beta.kubernetes.io/is-default-class": "false"}}}'
+      register: patch_result
+      failed_when: false
+      changed_when: "'patched' in patch_result.stdout"
+
+    - name: Display StorageClasses
+      shell: kubectl get sc
+      register: storage_classes
+
+    - name: Show StorageClasses
+      debug:
+        msg: "{{ storage_classes.stdout_lines }}"
+
+    # Smoke test: create a PVC + pod, verify it binds, clean up
+    - name: Create test PVC
+      shell: |
+        kubectl apply -f - <<'EOF'
+        apiVersion: v1
+        kind: PersistentVolumeClaim
+        metadata:
+          name: nfs-test-claim
+          namespace: default
+        spec:
+          accessModes:
+            - ReadWriteMany
+          resources:
+            requests:
+              storage: 1Mi
+        EOF
+
+    - name: Wait for test PVC to bind
+      shell: kubectl get pvc nfs-test-claim -o jsonpath='{.status.phase}'
+      register: pvc_status
+      until: pvc_status.stdout == "Bound"
+      retries: 30
+      delay: 5
+
+    - name: Create test pod that writes to the PVC
+      shell: |
+        kubectl apply -f - <<'EOF'
+        apiVersion: v1
+        kind: Pod
+        metadata:
+          name: nfs-test-pod
+          namespace: default
+        spec:
+          containers:
+            - name: test
+              image: busybox
+              command: ["sh", "-c", "echo 'NFS works' > /mnt/test.txt && cat /mnt/test.txt && sleep 5"]
+              volumeMounts:
+                - name: nfs-vol
+                  mountPath: /mnt
+          restartPolicy: Never
+          volumes:
+            - name: nfs-vol
+              persistentVolumeClaim:
+                claimName: nfs-test-claim
+        EOF
+
+    - name: Wait for test pod to complete
+      shell: kubectl get pod nfs-test-pod -o jsonpath='{.status.phase}'
+      register: pod_phase
+      until: pod_phase.stdout == "Succeeded"
+      retries: 30
+      delay: 5
+
+    - name: Get test pod logs
+      shell: kubectl logs nfs-test-pod
+      register: test_logs
+
+    - name: Verify test output
+      assert:
+        that:
+          - "'NFS works' in test_logs.stdout"
+        fail_msg: "NFS smoke test failed — pod did not write successfully"
+        success_msg: "NFS smoke test passed"
+
+    - name: Clean up test resources
+      shell: kubectl delete pod nfs-test-pod && kubectl delete pvc nfs-test-claim
+      failed_when: false
+
+    - name: Display final status
+      debug:
+        msg: |
+          ============================================
+          NFS Storage Provisioner Ready!
+          ============================================
+
+          NFS Server: {{ nfs_server }}
+          NFS Path:   {{ nfs_path }}
+
+          StorageClass: nfs-client (default)
+          Reclaim Policy: Retain
+          Archive on Delete: true (deleted PVC dirs prefixed with "archived-")
+
+          Verify:
+            kubectl get sc
+            kubectl get pods -n {{ nfs_provisioner_namespace }}
+
+          Test dynamic provisioning:
+            kubectl apply -f - <<EOF
+            apiVersion: v1
+            kind: PersistentVolumeClaim
+            metadata:
+              name: my-pvc
+            spec:
+              accessModes: [ReadWriteMany]
+              resources:
+                requests:
+                  storage: 1Gi
+            EOF
+
+          PVC subdirectories are created on: {{ nfs_server }}:{{ nfs_path }}
